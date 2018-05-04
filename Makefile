@@ -7,7 +7,8 @@ run:
 	  -v fdb:/etc/foundationdb \
 	  -v $$PWD:/usr/lib/go/src/github.com/hiroshi/fdb-search \
 	  --workdir=/usr/lib/go/src/github.com/hiroshi/fdb-search \
-	  5f3abdb55289 $(RUN)
+	  -p 12345:12345 \
+	  fdb:build_go-$(FDB_CHECKOUT) $(RUN)
 
 
 # NOTE: release-5.1 branch for https://github.com/apple/foundationdb/pull/263
