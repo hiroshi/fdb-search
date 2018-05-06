@@ -18,6 +18,7 @@ func TestIndex(t *testing.T) {
 	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
 		// tr.ClearRange(dir)
 		tr.ClearRange(tuple.Tuple{})
+		// tr.ClearRange(fdb.GetKey())
 		return
 	})
 	if err != nil {
@@ -26,7 +27,10 @@ func TestIndex(t *testing.T) {
 
 	createIndex("user_1", "doc_1", "日本語の content")
 	createIndex("user_1", "doc_2", "english content")
-	fmt.Printf("%v\n", search("user_1", "content"))
-	fmt.Printf("%v\n", search("user_1", "日本語"))
-	fmt.Printf("%v\n", search("user_1", "unmatch"))
+	fmt.Printf("search 'content': %v\n", search("user_1", "content"))
+	fmt.Printf("search '日本語': %v\n", search("user_1", "日本語"))
+	fmt.Printf("search 'unmatch: '%v\n", search("user_1", "unmatch"))
+	clearIndex("user_1", "doc_1")
+	fmt.Printf("clear 'doc_1'\n");
+	fmt.Printf("search 'content': %v\n", search("user_1", "content"))
 }

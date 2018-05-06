@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
   "github.com/apple/foundationdb/bindings/go/src/fdb/directory"
-  // "github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
+  "github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
   // "github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"log"
 	"fmt"
@@ -12,11 +12,7 @@ import (
 	"unicode/utf8"
 )
 
-// func clearIndex(scope string, id string) {
-	
-// }
-
-func createIndex(scope string, id string, inputText string) {
+func dbAndScopeSubspac(scope string) (fdb.Transactor, subspace.Subspace) {
 	// Open the default database from the system cluster
 	db := fdb.MustOpenDefault()
 	// directory
@@ -24,27 +20,54 @@ func createIndex(scope string, id string, inputText string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	scopeSubspace := dir.Sub(scope)
+	return db, dir.Sub(scope)
+}
+
+func clearIndex(scope string, id string) {
+	db, scopeSubspace := dbAndScopeSubspac(scope)
+
+	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
+		baseKey := scopeSubspace.Sub("I", id)
+		ri := tr.GetRange(baseKey, fdb.RangeOptions{}).Iterator()
+		for ri.Advance() {
+			kv := ri.MustGet()
+			t, err := baseKey.Unpack(kv.Key)
+			if err != nil {
+				log.Fatalf("Uppack failed")
+			}
+			tr.ClearRange(scopeSubspace.Sub("R", t[0], id))
+		}
+		tr.ClearRange(baseKey)
+		return
+	})
+	if err != nil {
+		log.Fatalf("clearIndex failed (%v)", err)
+	}
+}
+
+func createIndex(scope string, id string, inputText string) {
+	db, scopeSubspace := dbAndScopeSubspac(scope)
 
 	// Create index
 	// fmt.Printf("Create Indexes\n")
-	_, err = db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
+	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
 		// text := strings.ToLower("Windows と macOS")
 		// fmt.Printf("  text: %v\n", text)
 		text := strings.ToLower(inputText)
 
 		for i, w := 0, 0; i < len(text); i+= w {
 			r, width := utf8.DecodeRuneInString(text[i:])
-			key := scopeSubspace.Sub("i", string(r), id, i)
-			tr.Set(key, []byte("\x01"))
+			// Create key for search
+			tr.Set(scopeSubspace.Sub("R", string(r), id, i), []byte("\x01"))
+			// Create key for clear old search key
+			tr.Set(scopeSubspace.Sub("I", id, string(r)), []byte("\x01"))
 
-			
 			w = width
 		}
 		return
 	})
 	if err != nil {
-		log.Fatalf("Unable to set FDB database value (%v)", err)
+		log.Fatalf("createIndex failed (%v)", err)
 	}
 }
 
@@ -70,7 +93,7 @@ func search(scope string, term string) []string {
 
 		runes := []rune(text)
 		// fmt.Printf("runes: %v\n", runes)
-		key := scopeSubspace.Sub("i", string(runes[0]))
+		key := scopeSubspace.Sub("R", string(runes[0]))
 		ri := tr.GetRange(key, fdb.RangeOptions{}).Iterator()
 		for ri.Advance() {
 			// First rune
@@ -88,8 +111,8 @@ func search(scope string, term string) []string {
 			// next runes
 			for i := 1; i < len(runes); i++ {
 				// fmt.Printf("i: %v, rune: %v\n", i, string(runes[i]))
-				// nextKey := scopeSubspace.Sub("i", string(runes[i])).Pack(tuple.Tuple{id, int(pos) + i})
-				nextKey := scopeSubspace.Sub("i", string(runes[i]), id, pos)
+				// nextKey := scopeSubspace.Sub("R", string(runes[i])).Pack(tuple.Tuple{id, int(pos) + i})
+				nextKey := scopeSubspace.Sub("R", string(runes[i]), id, pos)
 				// fmt.Printf("key: %v\n", nextKey)
 				v := tr.Get(nextKey).MustGet()
 				// fmt.Printf("v: %v\n", v)
@@ -108,7 +131,7 @@ func search(scope string, term string) []string {
 		return
 	})
 	if err != nil {
-	    log.Fatalf("Unable to read FDB database value (%v)", err)
+	    log.Fatalf("search failed (%v)", err)
 	}
 	return results
 }
