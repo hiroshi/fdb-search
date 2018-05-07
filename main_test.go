@@ -25,12 +25,12 @@ func TestIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	createIndex("user_1", "doc_1", "日本語の content")
-	createIndex("user_1", "doc_2", "english content")
-	fmt.Printf("search 'content': %v\n", search("user_1", "content"))
-	fmt.Printf("search '日本語': %v\n", search("user_1", "日本語"))
-	fmt.Printf("search 'unmatch: '%v\n", search("user_1", "unmatch"))
-	clearIndex("user_1", "doc_1")
+	createIndex("app_1", "user_1", "doc_1", "日本語の content")
+	createIndex("app_1", "user_1", "doc_2", "english content")
+	fmt.Printf("search 'content': %v\n", search("app_1", "user_1", "content"))
+	fmt.Printf("search '日本語': %v\n", search("app_1", "user_1", "日本語"))
+	fmt.Printf("search 'unmatch: '%v\n", search("app_1", "user_1", "unmatch"))
+	clearIndex("app_1", "user_1", "doc_1")
 	fmt.Printf("clear 'doc_1'\n");
-	fmt.Printf("search 'content': %v\n", search("user_1", "content"))
+	fmt.Printf("search 'content': %v\n", search("app_1", "user_1", "content"))
 }

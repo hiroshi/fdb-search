@@ -12,19 +12,19 @@ import (
 	"unicode/utf8"
 )
 
-func dbAndScopeSubspac(scope string) (fdb.Transactor, subspace.Subspace) {
+func dbAndScopeSubspac(dirName string, scope string) (fdb.Transactor, subspace.Subspace) {
 	// Open the default database from the system cluster
 	db := fdb.MustOpenDefault()
-	// directory
-	dir, err := directory.CreateOrOpen(db, []string{"gyazo"}, nil)
+	// Directory subspace
+	dir, err := directory.CreateOrOpen(db, []string{dirName}, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 	return db, dir.Sub(scope)
 }
 
-func clearIndex(scope string, id string) {
-	db, scopeSubspace := dbAndScopeSubspac(scope)
+func clearIndex(dir string, scope string, id string) {
+	db, scopeSubspace := dbAndScopeSubspac(dir, scope)
 
 	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
 		baseKey := scopeSubspace.Sub("I", id)
@@ -45,8 +45,8 @@ func clearIndex(scope string, id string) {
 	}
 }
 
-func createIndex(scope string, id string, inputText string) {
-	db, scopeSubspace := dbAndScopeSubspac(scope)
+func createIndex(dir string, scope string, id string, inputText string) {
+	db, scopeSubspace := dbAndScopeSubspac(dir, scope)
 
 	// Create index
 	// fmt.Printf("Create Indexes\n")
@@ -75,19 +75,12 @@ func createIndex(scope string, id string, inputText string) {
 // 	: 
 // }
 
-func search(scope string, term string) []string {
-	// Open the default database from the system cluster
-	db := fdb.MustOpenDefault()
-	// directory
-	dir, err := directory.CreateOrOpen(db, []string{"gyazo"}, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	scopeSubspace := dir.Sub(scope)
+func search(dir string, scope string, term string) []string {
+	db, scopeSubspace := dbAndScopeSubspac(dir, scope)
 
 	results := []string{}
 
-	_, err = db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
+	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
 		text := strings.ToLower(term)
 		// fmt.Printf("  text: %v\n", text)
 
@@ -156,6 +149,10 @@ func postIndexHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseMultipartForm(1024*1024)
 	log.Printf("POST /index form:%v\n", r.Form)
 
+	dir := getParamOrErrorResponse(w, r.Form, "dir")
+	if dir == "" {
+		return
+	}
 	scope := getParamOrErrorResponse(w, r.Form, "scope")
 	if scope == "" {
 		return
@@ -169,7 +166,7 @@ func postIndexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	createIndex(scope, id, content)
+	createIndex(dir, scope, id, content)
 	fmt.Fprintf(w, "Index created for scope='%s', id='%s'\n", scope, id)
 }
 
@@ -181,6 +178,10 @@ func getSearchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	log.Printf("GET /search query:%v\n", q)
+	dir := getParamOrErrorResponse(w, q, "dir")
+	if dir == "" {
+		return
+	}
 	scope := getParamOrErrorResponse(w, q, "scope")
 	if scope == "" {
 		return
@@ -190,7 +191,7 @@ func getSearchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ids := search(scope, term)
+	ids := search(dir, scope, term)
 	fmt.Fprintf(w, "Found: %v\n", ids)
 }
 
