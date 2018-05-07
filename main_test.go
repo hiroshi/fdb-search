@@ -30,7 +30,13 @@ func TestIndex(t *testing.T) {
 	fmt.Printf("search 'content': %v\n", search("app_1", "user_1", "content"))
 	fmt.Printf("search '日本語': %v\n", search("app_1", "user_1", "日本語"))
 	fmt.Printf("search 'unmatch: '%v\n", search("app_1", "user_1", "unmatch"))
-	clearIndex("app_1", "user_1", "doc_1")
+
+	fmt.Printf("update 'doc_2'\n");
+	createIndex("app_1", "user_1", "doc_2", "english コンテンツ")
+	fmt.Printf("search 'content': %v\n", search("app_1", "user_1", "content"))
+	fmt.Printf("search 'コンテンツ': %v\n", search("app_1", "user_1", "コンテンツ"))
+
 	fmt.Printf("clear 'doc_1'\n");
+	clearIndex("app_1", "user_1", "doc_1")
 	fmt.Printf("search 'content': %v\n", search("app_1", "user_1", "content"))
 }

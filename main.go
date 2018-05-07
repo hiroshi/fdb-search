@@ -47,7 +47,8 @@ func clearIndex(dir string, scope string, id string) {
 
 func createIndex(dir string, scope string, id string, inputText string) {
 	db, scopeSubspace := dbAndScopeSubspac(dir, scope)
-
+	// Clear last index
+	clearIndex(dir, scope, id)
 	// Create index
 	// fmt.Printf("Create Indexes\n")
 	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
