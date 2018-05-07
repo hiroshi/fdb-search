@@ -23,11 +23,11 @@ func dbAndScopeSubspac(dirName string, scope string) (fdb.Transactor, subspace.S
 	return db, dir.Sub(scope)
 }
 
-func clearIndex(dir string, scope string, id string) {
+func clearIndex(dir string, scope string, doc string) {
 	db, scopeSubspace := dbAndScopeSubspac(dir, scope)
 
 	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
-		baseKey := scopeSubspace.Sub("I", id)
+		baseKey := scopeSubspace.Sub("D", doc)
 		ri := tr.GetRange(baseKey, fdb.RangeOptions{}).Iterator()
 		for ri.Advance() {
 			kv := ri.MustGet()
@@ -35,7 +35,7 @@ func clearIndex(dir string, scope string, id string) {
 			if err != nil {
 				log.Fatalf("Uppack failed")
 			}
-			tr.ClearRange(scopeSubspace.Sub("R", t[0], id))
+			tr.ClearRange(scopeSubspace.Sub("R", t[0], doc))
 		}
 		tr.ClearRange(baseKey)
 		return
@@ -45,10 +45,10 @@ func clearIndex(dir string, scope string, id string) {
 	}
 }
 
-func createIndex(dir string, scope string, id string, inputText string) {
+func createIndex(dir string, scope string, doc string, inputText string) {
 	db, scopeSubspace := dbAndScopeSubspac(dir, scope)
 	// Clear last index
-	clearIndex(dir, scope, id)
+	clearIndex(dir, scope, doc)
 	// Create index
 	// fmt.Printf("Create Indexes\n")
 	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
@@ -59,9 +59,9 @@ func createIndex(dir string, scope string, id string, inputText string) {
 		for i, w := 0, 0; i < len(text); i+= w {
 			r, width := utf8.DecodeRuneInString(text[i:])
 			// Create key for search
-			tr.Set(scopeSubspace.Sub("R", string(r), id, i), []byte("\x01"))
+			tr.Set(scopeSubspace.Sub("R", string(r), doc, i), []byte("\x01"))
 			// Create key for clear old search key
-			tr.Set(scopeSubspace.Sub("I", id, string(r)), []byte("\x01"))
+			tr.Set(scopeSubspace.Sub("D", doc, string(r)), []byte("\x01"))
 
 			w = width
 		}
@@ -99,14 +99,14 @@ func search(dir string, scope string, term string) []string {
 			if err != nil {
 				log.Fatalf("Uppack failed")
 			}
-			id := t[0]
+			doc := t[0]
 			pos := int(t[1].(int64)) + len(string(runes[0]))
 			match := true
 			// next runes
 			for i := 1; i < len(runes); i++ {
 				// fmt.Printf("i: %v, rune: %v\n", i, string(runes[i]))
-				// nextKey := scopeSubspace.Sub("R", string(runes[i])).Pack(tuple.Tuple{id, int(pos) + i})
-				nextKey := scopeSubspace.Sub("R", string(runes[i]), id, pos)
+				// nextKey := scopeSubspace.Sub("R", string(runes[i])).Pack(tuple.Tuple{doc, int(pos) + i})
+				nextKey := scopeSubspace.Sub("R", string(runes[i]), doc, pos)
 				// fmt.Printf("key: %v\n", nextKey)
 				v := tr.Get(nextKey).MustGet()
 				// fmt.Printf("v: %v\n", v)
@@ -119,7 +119,7 @@ func search(dir string, scope string, term string) []string {
 			}
 			if match {
 				// fmt.Printf("matched position: %v\n", pos)
-				results = append(results, id.(string)) // maybe inefficient
+				results = append(results, doc.(string)) // maybe inefficient
 			}
 		}
 		return
@@ -158,8 +158,8 @@ func postIndexHandler(w http.ResponseWriter, r *http.Request) {
 	if scope == "" {
 		return
 	}
-	id := getParamOrErrorResponse(w, r.Form, "id")
-	if id == "" {
+	doc := getParamOrErrorResponse(w, r.Form, "doc")
+	if doc == "" {
 		return
 	}
 	content := getParamOrErrorResponse(w, r.Form, "content")
@@ -167,8 +167,8 @@ func postIndexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	createIndex(dir, scope, id, content)
-	fmt.Fprintf(w, "Index created for scope='%s', id='%s'\n", scope, id)
+	createIndex(dir, scope, doc, content)
+	fmt.Fprintf(w, "Index created for scope='%s', doc='%s'\n", scope, doc)
 }
 
 func getSearchHandler(w http.ResponseWriter, r *http.Request) {
@@ -192,8 +192,8 @@ func getSearchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ids := search(dir, scope, term)
-	fmt.Fprintf(w, "Found: %v\n", ids)
+	docs := search(dir, scope, term)
+	fmt.Fprintf(w, "Found: %v\n", docs)
 }
 
 func main() {
