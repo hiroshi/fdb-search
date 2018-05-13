@@ -205,7 +205,7 @@ func main() {
 
 	http.HandleFunc("/index", postIndexHandler)
 	http.HandleFunc("/search", getSearchHandler)
-	addr := ":12345"
+	addr := ":1234"
 	log.Printf("Starging server: %s\n", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }

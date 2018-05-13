@@ -15,7 +15,7 @@ test:
 	  go test -v
 
 run-dev_server:
-	$(DOCKER_RUN) -p 12345:12345 $(BASE_IMAGE) \
+	$(DOCKER_RUN) -p 1234:1234 $(BASE_IMAGE) \
 	  go run main.go
 
 # docker image
@@ -27,7 +27,7 @@ docker-push:
 	docker push $(IMAGE)
 
 docker-test-run:
-	docker run --rm -ti -v fdb:/etc/foundationdb -p 12345:12345 $(IMAGE) ./fdb-search
+	docker run --rm -ti -v fdb:/etc/foundationdb -p 1234:1234 $(IMAGE) ./fdb-search
 
 
 # Prerequite docker images
