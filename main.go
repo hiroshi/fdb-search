@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
   "github.com/apple/foundationdb/bindings/go/src/fdb/directory"
   "github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
@@ -72,14 +73,18 @@ func createIndex(dir string, scope string, doc string, inputText string) {
 	}
 }
 
-// type SearchResult struct {
-// 	: 
-// }
+type SearchResultItem struct {
+	Doc string `json:"doc"`
+}
 
-func search(dir string, scope string, term string) []string {
+type SearchResult struct {
+	Items []SearchResultItem `json:"items"`
+}
+
+func search(dir string, scope string, term string) SearchResult {
 	db, scopeSubspace := dbAndScopeSubspac(dir, scope)
 
-	results := []string{}
+	items := []SearchResultItem{}
 
 	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
 		text := strings.ToLower(term)
@@ -119,7 +124,7 @@ func search(dir string, scope string, term string) []string {
 			}
 			if match {
 				// fmt.Printf("matched position: %v\n", pos)
-				results = append(results, doc.(string)) // maybe inefficient
+				items = append(items, SearchResultItem{doc.(string)}) // maybe inefficient
 			}
 		}
 		return
@@ -127,7 +132,7 @@ func search(dir string, scope string, term string) []string {
 	if err != nil {
 	    log.Fatalf("search failed (%v)", err)
 	}
-	return results
+	return SearchResult{items}
 }
 
 func getParamOrErrorResponse(w http.ResponseWriter, params map[string][]string, name string) string {
@@ -192,8 +197,13 @@ func getSearchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	docs := search(dir, scope, term)
-	fmt.Fprintf(w, "Found: %v\n", docs)
+	result := search(dir, scope, term)
+	resultJson, err := json.Marshal(result)
+	if err != nil {
+		log.Fatal("json.Marshal(SearchResult) failed: %v", err)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, string(resultJson))
 }
 
 func main() {

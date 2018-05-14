@@ -6,7 +6,7 @@ BASE_IMAGE = fdb:build_go-$(FDB_CHECKOUT)
 DOCKER_RUN = docker run --rm -ti \
   -e GOPATH=/root/foundationdb/bindings/go/build \
   -e LD_LIBRARY_PATH=/root/foundationdb/lib \
-  -v fdb:/etc/foundationdb \
+  -v fdb-0:/etc/foundationdb \
   -v $$PWD:/usr/lib/go/src/github.com/hiroshi/fdb-search \
   --workdir=/usr/lib/go/src/github.com/hiroshi/fdb-search
 
