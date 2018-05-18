@@ -3,40 +3,42 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
   // "github.com/apple/foundationdb/bindings/go/src/fdb/directory"
   // "github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
-  "github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
+  // "github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"fmt"
 	"testing"
 )
 
-func TestIndex(t *testing.T) {
+// func TestIndex(t *testing.T) {
+// 	fdb.MustAPIVersion(510)
+// 	db := fdb.MustOpenDefault()
+
+// 	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
+// 		tr.ClearRange(tuple.Tuple{})
+// 		return
+// 	})
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+
+// 	createIndex("app_1", "user_1", "doc_1", "日本語の content")
+// 	createIndex("app_1", "user_1", "doc_2", "english content")
+// 	fmt.Printf("search 'content': %v\n", search("app_1", "user_1", "content"))
+// 	fmt.Printf("search '日本語': %v\n", search("app_1", "user_1", "日本語"))
+// 	fmt.Printf("search 'unmatch: '%v\n", search("app_1", "user_1", "unmatch"))
+
+// 	fmt.Printf("update 'doc_2'\n");
+// 	createIndex("app_1", "user_1", "doc_2", "english コンテンツ")
+// 	fmt.Printf("search 'content': %v\n", search("app_1", "user_1", "content"))
+// 	fmt.Printf("search 'コンテンツ': %v\n", search("app_1", "user_1", "コンテンツ"))
+
+// 	fmt.Printf("clear 'doc_1'\n");
+// 	clearIndex("app_1", "user_1", "doc_1")
+// 	fmt.Printf("search 'content': %v\n", search("app_1", "user_1", "content"))
+// }
+
+func TestSearch(t *testing.T) {
 	fdb.MustAPIVersion(510)
-	db := fdb.MustOpenDefault()
-	// dir, err := directory.CreateOrOpen(db, []string{"gyazo"}, nil)
-	// if err != nil {
-	// 	t.Fatal(err)
-	// }
-	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
-		// tr.ClearRange(dir)
-		tr.ClearRange(tuple.Tuple{})
-		// tr.ClearRange(fdb.GetKey())
-		return
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	// db := fdb.MustOpenDefault()
 
-	createIndex("app_1", "user_1", "doc_1", "日本語の content")
-	createIndex("app_1", "user_1", "doc_2", "english content")
-	fmt.Printf("search 'content': %v\n", search("app_1", "user_1", "content"))
-	fmt.Printf("search '日本語': %v\n", search("app_1", "user_1", "日本語"))
-	fmt.Printf("search 'unmatch: '%v\n", search("app_1", "user_1", "unmatch"))
-
-	fmt.Printf("update 'doc_2'\n");
-	createIndex("app_1", "user_1", "doc_2", "english コンテンツ")
-	fmt.Printf("search 'content': %v\n", search("app_1", "user_1", "content"))
-	fmt.Printf("search 'コンテンツ': %v\n", search("app_1", "user_1", "コンテンツ"))
-
-	fmt.Printf("clear 'doc_1'\n");
-	clearIndex("app_1", "user_1", "doc_1")
-	fmt.Printf("search 'content': %v\n", search("app_1", "user_1", "content"))
+	fmt.Printf("search 'app': %v\n", search("-gyazo", "519effd2dc7d3dd10c185a2e", "アプリ"))
 }

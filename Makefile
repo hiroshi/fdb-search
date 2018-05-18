@@ -1,12 +1,14 @@
 # NOTE: release-5.1 branch for https://github.com/apple/foundationdb/pull/263
 FDB_CHECKOUT = release-5.1
 BASE_IMAGE = fdb:build_go-$(FDB_CHECKOUT)
+FDB_CLUSTER_FILE_VOLUME = fdb-0
+PORT = 1234
 
 # Development
 DOCKER_RUN = docker run --rm -ti \
   -e GOPATH=/root/foundationdb/bindings/go/build \
   -e LD_LIBRARY_PATH=/root/foundationdb/lib \
-  -v fdb-0:/etc/foundationdb \
+  -v $(FDB_CLUSTER_FILE_VOLUME):/etc/foundationdb \
   -v $$PWD:/usr/lib/go/src/github.com/hiroshi/fdb-search \
   --workdir=/usr/lib/go/src/github.com/hiroshi/fdb-search
 
@@ -15,7 +17,7 @@ test:
 	  go test -v
 
 run-dev_server:
-	$(DOCKER_RUN) -p 1234:1234 $(BASE_IMAGE) \
+	$(DOCKER_RUN) -p $(PORT):$(PORT) -e PORT=$(PORT) $(BASE_IMAGE) \
 	  go run main.go
 
 # docker image
@@ -27,7 +29,7 @@ docker-push:
 	docker push $(IMAGE)
 
 docker-test-run:
-	docker run --rm -ti -v fdb:/etc/foundationdb -p 1234:1234 $(IMAGE) ./fdb-search
+	docker run --rm -ti -v fdb:/etc/foundationdb -e PORT=$(PORT) -p $(PORT):$(PORT) $(IMAGE) ./fdb-search
 
 
 # Prerequite docker images

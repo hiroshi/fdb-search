@@ -6,6 +6,7 @@ import (
   "github.com/apple/foundationdb/bindings/go/src/fdb/directory"
   "github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
   // "github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
+	"os"
 	"log"
 	"fmt"
 	"net/http"
@@ -75,37 +76,44 @@ func createIndex(dir string, scope string, doc string, inputText string) {
 
 type SearchResultItem struct {
 	Doc string `json:"doc"`
+	Pos int `json:"pos"`
 }
 
 type SearchResult struct {
+	Count int `json:"count"`
 	Items []SearchResultItem `json:"items"`
 }
 
 func search(dir string, scope string, term string) SearchResult {
 	db, scopeSubspace := dbAndScopeSubspac(dir, scope)
 
+	runes := []rune(strings.ToLower(term))
+	// fmt.Printf("runes: %v\n", runes)
+	searchKey := scopeSubspace.Sub("R", string(runes[0]))
+	beginKey := searchKey
+	endKey := scopeSubspace.Sub("R", string(runes[0]) + "0xFF")
+
+	count := 0
 	items := []SearchResultItem{}
 
 	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
-		text := strings.ToLower(term)
-		// fmt.Printf("  text: %v\n", text)
-
-		runes := []rune(text)
-		// fmt.Printf("runes: %v\n", runes)
-		key := scopeSubspace.Sub("R", string(runes[0]))
-		ri := tr.GetRange(key, fdb.RangeOptions{}).Iterator()
+		keyRange := fdb.KeyRange{beginKey, endKey}
+		// fmt.Printf("start transaction: %v\n", keyRange)
+		ri := tr.GetRange(keyRange, fdb.RangeOptions{}).Iterator()
 		for ri.Advance() {
 			// First rune
 			// fmt.Printf("First rune: %v\n", string(runes[0]))
 			kv := ri.MustGet()
+			beginKey = subspace.FromBytes(kv.Key)
 			// fmt.Printf("kv: %v\n", kv)
-			t, err := key.Unpack(kv.Key)
+			t, err := searchKey.Unpack(kv.Key)
 			// fmt.Printf("t: %v\n", t)
 			if err != nil {
 				log.Fatalf("Uppack failed")
 			}
 			doc := t[0]
-			pos := int(t[1].(int64)) + len(string(runes[0]))
+			startPos := int(t[1].(int64))
+			pos := startPos + len(string(runes[0]))
 			match := true
 			// next runes
 			for i := 1; i < len(runes); i++ {
@@ -124,7 +132,16 @@ func search(dir string, scope string, term string) SearchResult {
 			}
 			if match {
 				// fmt.Printf("matched position: %v\n", pos)
-				items = append(items, SearchResultItem{doc.(string)}) // maybe inefficient
+				item := SearchResultItem{doc.(string), startPos}
+				// fmt.Printf("item[%d] = %v\n", count, item)
+				// for _, i := range items {
+				// 	if i == item {
+				// 		panic("dulicated item")
+				// 	}
+				// }
+				items = append(items, item) // maybe inefficient
+				// fmt.Printf("item[%d] = %v\n", count, item)
+				count += 1
 			}
 		}
 		return
@@ -132,7 +149,7 @@ func search(dir string, scope string, term string) SearchResult {
 	if err != nil {
 	    log.Fatalf("search failed (%v)", err)
 	}
-	return SearchResult{items}
+	return SearchResult{count, items}
 }
 
 func getParamOrErrorResponse(w http.ResponseWriter, params map[string][]string, name string) string {
@@ -215,7 +232,11 @@ func main() {
 
 	http.HandleFunc("/index", postIndexHandler)
 	http.HandleFunc("/search", getSearchHandler)
-	addr := ":1234"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "1234"
+	}
+	addr := ":" + port
 	log.Printf("Starging server: %s\n", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
