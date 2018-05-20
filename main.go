@@ -5,7 +5,7 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
   "github.com/apple/foundationdb/bindings/go/src/fdb/directory"
   "github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
-  // "github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
+  "github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"os"
 	"log"
 	"fmt"
@@ -80,8 +80,16 @@ type SearchResultItem struct {
 }
 
 type SearchResult struct {
-	Count int `json:"count"`
 	Items []SearchResultItem `json:"items"`
+	Count int `json:"count"`
+}
+
+type SearchFuture struct {
+	// Key fdb.Key
+  Doc tuple.TupleElement
+	StartPos int
+  Pos int
+	Future fdb.FutureByteSlice
 }
 
 func search(dir string, scope string, term string) SearchResult {
@@ -93,12 +101,14 @@ func search(dir string, scope string, term string) SearchResult {
 	beginKey := searchKey
 	endKey := scopeSubspace.Sub("R", string(runes[0]) + "0xFF")
 
-	count := 0
+	// count := 0
 	items := []SearchResultItem{}
 
 	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
-		keyRange := fdb.KeyRange{beginKey, endKey}
 		// fmt.Printf("start transaction: %v\n", keyRange)
+		futures := []SearchFuture{}
+
+		keyRange := fdb.KeyRange{beginKey, endKey}
 		ri := tr.GetRange(keyRange, fdb.RangeOptions{}).Iterator()
 		for ri.Advance() {
 			// First rune
@@ -114,42 +124,66 @@ func search(dir string, scope string, term string) SearchResult {
 			doc := t[0]
 			startPos := int(t[1].(int64))
 			pos := startPos + len(string(runes[0]))
-			match := true
-			// next runes
-			for i := 1; i < len(runes); i++ {
-				// fmt.Printf("i: %v, rune: %v\n", i, string(runes[i]))
-				// nextKey := scopeSubspace.Sub("R", string(runes[i])).Pack(tuple.Tuple{doc, int(pos) + i})
-				nextKey := scopeSubspace.Sub("R", string(runes[i]), doc, pos)
-				// fmt.Printf("key: %v\n", nextKey)
-				v := tr.Get(nextKey).MustGet()
-				// fmt.Printf("v: %v\n", v)
-				if string(v) == "" {
-					// fmt.Printf("not matched\n")
-					match = false
-					break
+			// match := true
+			// continue
+
+			// // next runes
+			// for i := 1; i < len(runes); i++ {
+			// 	// fmt.Printf("i: %v, rune: %v\n", i, string(runes[i]))
+			// 	// nextKey := scopeSubspace.Sub("R", string(runes[i])).Pack(tuple.Tuple{doc, int(pos) + i})
+			// 	nextKey := scopeSubspace.Sub("R", string(runes[i]), doc, pos)
+			// 	// fmt.Printf("key: %v\n", nextKey)
+			// 	v := tr.Get(nextKey).MustGet()
+			// 	// fmt.Printf("v: %v\n", v)
+			// 	if string(v) == "" {
+			// 		// fmt.Printf("not matched\n")
+			// 		match = false
+			// 		break
+			// 	}
+			// 	pos += len(string(runes[i]))
+			// }
+			// if match {
+			// 	// fmt.Printf("matched position: %v\n", pos)
+			// 	item := SearchResultItem{doc.(string), startPos}
+			// 	// fmt.Printf("item[%d] = %v\n", count, item)
+			// 	// for _, i := range items {
+			// 	// 	if i == item {
+			// 	// 		panic("dulicated item")
+			// 	// 	}
+			// 	// }
+			// 	items = append(items, item) // maybe inefficient
+			// 	// fmt.Printf("item[%d] = %v\n", count, item)
+			// 	count += 1
+			// }
+
+			nextKey := scopeSubspace.Sub("R", string(runes[1]), doc, pos)
+			pos +=  len(string(runes[1]))
+			futures = append(futures, SearchFuture{doc, startPos, pos, tr.Get(nextKey)})
+		}
+
+		for i := 2; i < len(runes); i++ {
+			nextFutures := futures[:0]
+			for _, future := range futures {
+				v := future.Future.MustGet()
+				if string(v) != "" {
+					if i + 1 < len(runes) {
+						nextKey := scopeSubspace.Sub("R", string(runes[i]), future.Doc, future.Pos)
+						pos := future.Pos + len(string(runes[i]))
+						nextFutures = append(nextFutures, SearchFuture{future.Doc, future.StartPos, pos, tr.Get(nextKey)})
+					} else {
+						item := SearchResultItem{future.Doc.(string), future.StartPos}
+						items = append(items, item)
+					}
 				}
-				pos += len(string(runes[i]))
 			}
-			if match {
-				// fmt.Printf("matched position: %v\n", pos)
-				item := SearchResultItem{doc.(string), startPos}
-				// fmt.Printf("item[%d] = %v\n", count, item)
-				// for _, i := range items {
-				// 	if i == item {
-				// 		panic("dulicated item")
-				// 	}
-				// }
-				items = append(items, item) // maybe inefficient
-				// fmt.Printf("item[%d] = %v\n", count, item)
-				count += 1
-			}
+			futures = nextFutures
 		}
 		return
 	})
 	if err != nil {
 	    log.Fatalf("search failed (%v)", err)
 	}
-	return SearchResult{count, items}
+	return SearchResult{items, len(items)}
 }
 
 func getParamOrErrorResponse(w http.ResponseWriter, params map[string][]string, name string) string {
