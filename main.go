@@ -96,71 +96,35 @@ func search(dir string, scope string, term string) SearchResult {
 	db, scopeSubspace := dbAndScopeSubspac(dir, scope)
 
 	runes := []rune(strings.ToLower(term))
-	// fmt.Printf("runes: %v\n", runes)
 	searchKey := scopeSubspace.Sub("R", string(runes[0]))
 	beginKey := searchKey
 	endKey := scopeSubspace.Sub("R", string(runes[0]) + "0xFF")
 
-	// count := 0
 	items := []SearchResultItem{}
 
 	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
-		// fmt.Printf("start transaction: %v\n", keyRange)
 		futures := []SearchFuture{}
 
+		// Get an iterator for the first rune
 		keyRange := fdb.KeyRange{beginKey, endKey}
 		ri := tr.GetRange(keyRange, fdb.RangeOptions{}).Iterator()
+		// Iterate through keys for the first rune to get all future of keys for the second rune
 		for ri.Advance() {
-			// First rune
-			// fmt.Printf("First rune: %v\n", string(runes[0]))
 			kv := ri.MustGet()
 			beginKey = subspace.FromBytes(kv.Key)
-			// fmt.Printf("kv: %v\n", kv)
 			t, err := searchKey.Unpack(kv.Key)
-			// fmt.Printf("t: %v\n", t)
 			if err != nil {
 				log.Fatalf("Uppack failed")
 			}
 			doc := t[0]
 			startPos := int(t[1].(int64))
 			pos := startPos + len(string(runes[0]))
-			// match := true
-			// continue
-
-			// // next runes
-			// for i := 1; i < len(runes); i++ {
-			// 	// fmt.Printf("i: %v, rune: %v\n", i, string(runes[i]))
-			// 	// nextKey := scopeSubspace.Sub("R", string(runes[i])).Pack(tuple.Tuple{doc, int(pos) + i})
-			// 	nextKey := scopeSubspace.Sub("R", string(runes[i]), doc, pos)
-			// 	// fmt.Printf("key: %v\n", nextKey)
-			// 	v := tr.Get(nextKey).MustGet()
-			// 	// fmt.Printf("v: %v\n", v)
-			// 	if string(v) == "" {
-			// 		// fmt.Printf("not matched\n")
-			// 		match = false
-			// 		break
-			// 	}
-			// 	pos += len(string(runes[i]))
-			// }
-			// if match {
-			// 	// fmt.Printf("matched position: %v\n", pos)
-			// 	item := SearchResultItem{doc.(string), startPos}
-			// 	// fmt.Printf("item[%d] = %v\n", count, item)
-			// 	// for _, i := range items {
-			// 	// 	if i == item {
-			// 	// 		panic("dulicated item")
-			// 	// 	}
-			// 	// }
-			// 	items = append(items, item) // maybe inefficient
-			// 	// fmt.Printf("item[%d] = %v\n", count, item)
-			// 	count += 1
-			// }
 
 			nextKey := scopeSubspace.Sub("R", string(runes[1]), doc, pos)
 			pos +=  len(string(runes[1]))
 			futures = append(futures, SearchFuture{doc, startPos, pos, tr.Get(nextKey)})
 		}
-
+		// Check the second value of futures
 		for i := 2; i < len(runes); i++ {
 			nextFutures := futures[:0]
 			for _, future := range futures {
