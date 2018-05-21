@@ -14,7 +14,7 @@ import (
 	"unicode/utf8"
 )
 
-func dbAndScopeSubspac(dirName string, scope string) (fdb.Transactor, subspace.Subspace) {
+func dbAndContextSubspac(dirName string, context string) (fdb.Transactor, subspace.Subspace) {
 	// Open the default database from the system cluster
 	db := fdb.MustOpenDefault()
 	// Directory subspace
@@ -22,14 +22,14 @@ func dbAndScopeSubspac(dirName string, scope string) (fdb.Transactor, subspace.S
 	if err != nil {
 		log.Fatal(err)
 	}
-	return db, dir.Sub(scope)
+	return db, dir.Sub(context)
 }
 
-func clearIndex(dir string, scope string, doc string) {
-	db, scopeSubspace := dbAndScopeSubspac(dir, scope)
+func clearIndex(dir string, context string, id string) {
+	db, contextSubspace := dbAndContextSubspac(dir, context)
 
 	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
-		baseKey := scopeSubspace.Sub("D", doc)
+		baseKey := contextSubspace.Sub("D", id)
 		ri := tr.GetRange(baseKey, fdb.RangeOptions{}).Iterator()
 		for ri.Advance() {
 			kv := ri.MustGet()
@@ -37,7 +37,7 @@ func clearIndex(dir string, scope string, doc string) {
 			if err != nil {
 				log.Fatalf("Uppack failed")
 			}
-			tr.ClearRange(scopeSubspace.Sub("R", t[0], doc))
+			tr.ClearRange(contextSubspace.Sub("R", t[0], id))
 		}
 		tr.ClearRange(baseKey)
 		return
@@ -47,10 +47,10 @@ func clearIndex(dir string, scope string, doc string) {
 	}
 }
 
-func createIndex(dir string, scope string, doc string, inputText string) {
-	db, scopeSubspace := dbAndScopeSubspac(dir, scope)
+func createIndex(dir string, context string, id string, inputText string) {
+	db, contextSubspace := dbAndContextSubspac(dir, context)
 	// Clear last index
-	clearIndex(dir, scope, doc)
+	clearIndex(dir, context, id)
 	// Create index
 	// fmt.Printf("Create Indexes\n")
 	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
@@ -61,9 +61,9 @@ func createIndex(dir string, scope string, doc string, inputText string) {
 		for i, w := 0, 0; i < len(text); i+= w {
 			r, width := utf8.DecodeRuneInString(text[i:])
 			// Create key for search
-			tr.Set(scopeSubspace.Sub("R", string(r), doc, i), []byte("\x01"))
+			tr.Set(contextSubspace.Sub("R", string(r), id, i), []byte("\x01"))
 			// Create key for clear old search key
-			tr.Set(scopeSubspace.Sub("D", doc, string(r)), []byte("\x01"))
+			tr.Set(contextSubspace.Sub("D", id, string(r)), []byte("\x01"))
 
 			w = width
 		}
@@ -75,7 +75,7 @@ func createIndex(dir string, scope string, doc string, inputText string) {
 }
 
 type SearchResultItem struct {
-	Doc string `json:"doc"`
+	Id string `json:"id"`
 	Pos int `json:"pos"`
 }
 
@@ -86,19 +86,19 @@ type SearchResult struct {
 
 type SearchFuture struct {
 	// Key fdb.Key
-  Doc tuple.TupleElement
+  Id tuple.TupleElement
 	StartPos int
   Pos int
 	Future fdb.FutureByteSlice
 }
 
-func search(dir string, scope string, term string) SearchResult {
-	db, scopeSubspace := dbAndScopeSubspac(dir, scope)
+func search(dir string, context string, term string) SearchResult {
+	db, contextSubspace := dbAndContextSubspac(dir, context)
 
 	runes := []rune(strings.ToLower(term))
-	searchKey := scopeSubspace.Sub("R", string(runes[0]))
+	searchKey := contextSubspace.Sub("R", string(runes[0]))
 	beginKey := searchKey
-	endKey := scopeSubspace.Sub("R", string(runes[0]) + "0xFF")
+	endKey := contextSubspace.Sub("R", string(runes[0]) + "0xFF")
 
 	items := []SearchResultItem{}
 
@@ -116,13 +116,13 @@ func search(dir string, scope string, term string) SearchResult {
 			if err != nil {
 				log.Fatalf("Uppack failed")
 			}
-			doc := t[0]
+			id := t[0]
 			startPos := int(t[1].(int64))
 			pos := startPos + len(string(runes[0]))
 
-			nextKey := scopeSubspace.Sub("R", string(runes[1]), doc, pos)
+			nextKey := contextSubspace.Sub("R", string(runes[1]), id, pos)
 			pos +=  len(string(runes[1]))
-			futures = append(futures, SearchFuture{doc, startPos, pos, tr.Get(nextKey)})
+			futures = append(futures, SearchFuture{id, startPos, pos, tr.Get(nextKey)})
 		}
 		// Check the second value of futures
 		for i := 2; i < len(runes); i++ {
@@ -131,11 +131,11 @@ func search(dir string, scope string, term string) SearchResult {
 				v := future.Future.MustGet()
 				if string(v) != "" {
 					if i + 1 < len(runes) {
-						nextKey := scopeSubspace.Sub("R", string(runes[i]), future.Doc, future.Pos)
+						nextKey := contextSubspace.Sub("R", string(runes[i]), future.Id, future.Pos)
 						pos := future.Pos + len(string(runes[i]))
-						nextFutures = append(nextFutures, SearchFuture{future.Doc, future.StartPos, pos, tr.Get(nextKey)})
+						nextFutures = append(nextFutures, SearchFuture{future.Id, future.StartPos, pos, tr.Get(nextKey)})
 					} else {
-						item := SearchResultItem{future.Doc.(string), future.StartPos}
+						item := SearchResultItem{future.Id.(string), future.StartPos}
 						items = append(items, item)
 					}
 				}
@@ -174,21 +174,21 @@ func postIndexHandler(w http.ResponseWriter, r *http.Request) {
 	if dir == "" {
 		return
 	}
-	scope := getParamOrErrorResponse(w, r.Form, "scope")
-	if scope == "" {
+	context := getParamOrErrorResponse(w, r.Form, "context")
+	if context == "" {
 		return
 	}
-	doc := getParamOrErrorResponse(w, r.Form, "doc")
-	if doc == "" {
+	id := getParamOrErrorResponse(w, r.Form, "id")
+	if id == "" {
 		return
 	}
-	content := getParamOrErrorResponse(w, r.Form, "content")
-	if content == "" {
+	text := getParamOrErrorResponse(w, r.Form, "text")
+	if text == "" {
 		return
 	}
 
-	createIndex(dir, scope, doc, content)
-	fmt.Fprintf(w, "Index created for scope='%s', doc='%s'\n", scope, doc)
+	createIndex(dir, context, id, text)
+	fmt.Fprintf(w, "Index created for context='%s', id='%s'\n", context, id)
 }
 
 func getSearchHandler(w http.ResponseWriter, r *http.Request) {
@@ -203,8 +203,8 @@ func getSearchHandler(w http.ResponseWriter, r *http.Request) {
 	if dir == "" {
 		return
 	}
-	scope := getParamOrErrorResponse(w, q, "scope")
-	if scope == "" {
+	context := getParamOrErrorResponse(w, q, "context")
+	if context == "" {
 		return
 	}
 	term := getParamOrErrorResponse(w, q, "term")
@@ -212,7 +212,7 @@ func getSearchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := search(dir, scope, term)
+	result := search(dir, context, term)
 	resultJson, err := json.Marshal(result)
 	if err != nil {
 		log.Fatal("json.Marshal(SearchResult) failed: %v", err)
