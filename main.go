@@ -14,6 +14,12 @@ import (
 	"unicode/utf8"
 )
 
+// Key structures:
+//   RuneIndex:
+//     dir, context, "R", rune, id, pos
+//   IdClearIndex:
+//     dir, context, "I", id, rune
+
 func dbAndContextSubspac(dirName string, context string) (fdb.Transactor, subspace.Subspace) {
 	// Open the default database from the system cluster
 	db := fdb.MustOpenDefault()
@@ -29,7 +35,7 @@ func clearIndex(dir string, context string, id string) {
 	db, contextSubspace := dbAndContextSubspac(dir, context)
 
 	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
-		baseKey := contextSubspace.Sub("D", id)
+		baseKey := contextSubspace.Sub("I", id)
 		ri := tr.GetRange(baseKey, fdb.RangeOptions{}).Iterator()
 		for ri.Advance() {
 			kv := ri.MustGet()
@@ -63,7 +69,7 @@ func createIndex(dir string, context string, id string, inputText string) {
 			// Create key for search
 			tr.Set(contextSubspace.Sub("R", string(r), id, i), []byte("\x01"))
 			// Create key for clear old search key
-			tr.Set(contextSubspace.Sub("D", id, string(r)), []byte("\x01"))
+			tr.Set(contextSubspace.Sub("I", id, string(r)), []byte("\x01"))
 
 			w = width
 		}
