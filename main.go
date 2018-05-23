@@ -10,15 +10,16 @@ import (
 	"log"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
 
 // Key structures:
-//   RuneIndex:
-//     dir, context, "R", rune, id, pos
-//   IdClearIndex:
-//     dir, context, "I", id, rune
+//   Index for search by the rune:
+//     dir, context, "R", rune, order, id, pos
+//   Index for clear last search index for the id:
+//     dir, context, "I", id, order, rune
 
 func dbAndContextSubspac(dirName string, context string) (fdb.Transactor, subspace.Subspace) {
 	// Open the default database from the system cluster
@@ -43,7 +44,9 @@ func clearIndex(dir string, context string, id string) {
 			if err != nil {
 				log.Fatalf("Uppack failed")
 			}
-			tr.ClearRange(contextSubspace.Sub("R", t[0], id))
+			order := t[0]
+			rune := t[1]
+			tr.ClearRange(contextSubspace.Sub("R", rune, order, id))
 		}
 		tr.ClearRange(baseKey)
 		return
@@ -53,23 +56,20 @@ func clearIndex(dir string, context string, id string) {
 	}
 }
 
-func createIndex(dir string, context string, id string, inputText string) {
+func createIndex(dir string, context string, order int64, id string, inputText string) {
 	db, contextSubspace := dbAndContextSubspac(dir, context)
-	// Clear last index
+	// Clear last index for the id
 	clearIndex(dir, context, id)
 	// Create index
-	// fmt.Printf("Create Indexes\n")
 	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
-		// text := strings.ToLower("Windows と macOS")
-		// fmt.Printf("  text: %v\n", text)
 		text := strings.ToLower(inputText)
 
 		for i, w := 0, 0; i < len(text); i+= w {
 			r, width := utf8.DecodeRuneInString(text[i:])
 			// Create key for search
-			tr.Set(contextSubspace.Sub("R", string(r), id, i), []byte("\x01"))
+			tr.Set(contextSubspace.Sub("R", string(r), order, id, i), []byte("\x01"))
 			// Create key for clear old search key
-			tr.Set(contextSubspace.Sub("I", id, string(r)), []byte("\x01"))
+			tr.Set(contextSubspace.Sub("I", id, order, string(r)), []byte("\x01"))
 
 			w = width
 		}
@@ -91,7 +91,7 @@ type SearchResult struct {
 }
 
 type SearchFuture struct {
-	// Key fdb.Key
+	Order int64
   Id tuple.TupleElement
 	StartPos int
   Pos int
@@ -113,7 +113,7 @@ func search(dir string, context string, term string) SearchResult {
 
 		// Get an iterator for the first rune
 		keyRange := fdb.KeyRange{beginKey, endKey}
-		ri := tr.GetRange(keyRange, fdb.RangeOptions{}).Iterator()
+		ri := tr.GetRange(keyRange, fdb.RangeOptions{Reverse: true}).Iterator()
 		// Iterate through keys for the first rune to get all future of keys for the second rune
 		for ri.Advance() {
 			kv := ri.MustGet()
@@ -122,24 +122,25 @@ func search(dir string, context string, term string) SearchResult {
 			if err != nil {
 				log.Fatalf("Uppack failed")
 			}
-			id := t[0]
-			startPos := int(t[1].(int64))
+			order := t[0].(int64)
+			id := t[1]
+			startPos := int(t[2].(int64))
 			pos := startPos + len(string(runes[0]))
 
-			nextKey := contextSubspace.Sub("R", string(runes[1]), id, pos)
+			nextKey := contextSubspace.Sub("R", string(runes[1]), order, id, pos)
 			pos +=  len(string(runes[1]))
-			futures = append(futures, SearchFuture{id, startPos, pos, tr.Get(nextKey)})
+			futures = append(futures, SearchFuture{order, id, startPos, pos, tr.Get(nextKey)})
 		}
 		// Check the second value of futures
-		for i := 2; i < len(runes); i++ {
+		for i := 2; i <= len(runes); i++ {
 			nextFutures := futures[:0]
 			for _, future := range futures {
 				v := future.Future.MustGet()
 				if string(v) != "" {
 					if i + 1 < len(runes) {
-						nextKey := contextSubspace.Sub("R", string(runes[i]), future.Id, future.Pos)
+						nextKey := contextSubspace.Sub("R", string(runes[i]), future.Order, future.Id, future.Pos)
 						pos := future.Pos + len(string(runes[i]))
-						nextFutures = append(nextFutures, SearchFuture{future.Id, future.StartPos, pos, tr.Get(nextKey)})
+						nextFutures = append(nextFutures, SearchFuture{future.Order, future.Id, future.StartPos, pos, tr.Get(nextKey)})
 					} else {
 						item := SearchResultItem{future.Id.(string), future.StartPos}
 						items = append(items, item)
@@ -184,6 +185,10 @@ func postIndexHandler(w http.ResponseWriter, r *http.Request) {
 	if context == "" {
 		return
 	}
+	orderString := getParamOrErrorResponse(w, r.Form, "order")
+	if orderString == "" {
+		return
+	}
 	id := getParamOrErrorResponse(w, r.Form, "id")
 	if id == "" {
 		return
@@ -193,7 +198,14 @@ func postIndexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	createIndex(dir, context, id, text)
+	order, error := strconv.Atoi(orderString)
+	if error != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, "Error: order must be integer: order=%v, error=", orderString, error)
+		return
+	}
+
+	createIndex(dir, context, int64(order), id, text)
 	fmt.Fprintf(w, "Index created for context='%s', id='%s'\n", context, id)
 }
 
