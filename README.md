@@ -35,4 +35,4 @@ $ docker run -ti --rm -v fdb-0:/etc/foundationdb -e PORT=1234 -p 1234:1234 \
     hiroshi3110/fdb-search ./fdb-search
 ```
 
-For more infomation about the `hiroshi3110/foundationdb:5.1.5-1_ubuntu-16.04` dockder image, see https://github.com/hiroshi/foundationdb-docker.
+For more infomation about the `hiroshi3110/foundationdb` dockder image, see https://github.com/hiroshi/foundationdb-docker.
