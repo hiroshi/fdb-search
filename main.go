@@ -134,7 +134,12 @@ func search(dir string, context string, term string) SearchResult {
 		// Check the second value of futures
 		for i := 2; i <= len(runes); i++ {
 			nextFutures := futures[:0]
+			lastMatchId := ""
 			for _, future := range futures {
+				// Skip duplicated Id from result
+				if lastMatchId == future.Id {
+					continue
+				}
 				v := future.Future.MustGet()
 				if string(v) != "" {
 					if i + 1 < len(runes) {
@@ -144,6 +149,7 @@ func search(dir string, context string, term string) SearchResult {
 					} else {
 						item := SearchResultItem{future.Id.(string), future.StartPos}
 						items = append(items, item)
+						lastMatchId = future.Id.(string)
 					}
 				}
 			}

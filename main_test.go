@@ -67,6 +67,13 @@ func TestSearch(t *testing.T) {
 	if result.Count != 3 || result.Items[0].Id != "3" || result.Items[1].Id != "1" || result.Items[2].Id != "2" {
 	 	t.Errorf("result.Items sholuld be in order of id [3,1,2]. result: %+v", result)
 	}
+	// Unique id in a result
+	createIndex("-test", "user_1", 0, "4", "duplicated duplicated")
+	createIndex("-test", "user_1", 0, "5", "not duplicated")
+	result = search("-test", "user_1", "dup")
+	if result.Count != 2 {
+	 	t.Errorf("result.Items[].Id must be unique. result: %+v", result)
+	}
 
 }
 
