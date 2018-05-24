@@ -76,10 +76,3 @@ func TestSearch(t *testing.T) {
 	}
 
 }
-
-// func TestSampleSearch(t *testing.T) {
-// 	fdb.MustAPIVersion(510)
-// 	// db := fdb.MustOpenDefault()
-
-// 	fmt.Printf("search 'app': %v\n", search("-gyazo", "519effd2dc7d3dd10c185a2e", "アプリ"))
-// }
