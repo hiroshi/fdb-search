@@ -75,4 +75,10 @@ func TestSearch(t *testing.T) {
 	 	t.Errorf("result.Items[].Id must be unique. result: %+v", result)
 	}
 
+	// Search single character
+	createIndex("-test", "user_3", 0, "1", "test")
+	result = search("-test", "user_3", "t")
+	if result.Count != 1 {
+		t.Errorf("result.Items[].Id must be unique. result: %+v", result)
+	}
 }

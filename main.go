@@ -107,8 +107,10 @@ func search(dir string, context string, term string) SearchResult {
 	endKey := contextSubspace.Sub("R", string(runes[0]) + "0xFF")
 
 	items := []SearchResultItem{}
+	lastMatchId := ""
 
 	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
+		// fmt.Printf("transaction: %+v\n", tr)
 		futures := []SearchFuture{}
 
 		// Get an iterator for the first rune
@@ -127,14 +129,22 @@ func search(dir string, context string, term string) SearchResult {
 			startPos := int(t[2].(int64))
 			pos := startPos + len(string(runes[0]))
 
-			nextKey := contextSubspace.Sub("R", string(runes[1]), order, id, pos)
-			pos +=  len(string(runes[1]))
-			futures = append(futures, SearchFuture{order, id, startPos, pos, tr.Get(nextKey)})
+			if len(runes) > 1 {
+				nextKey := contextSubspace.Sub("R", string(runes[1]), order, id, pos)
+				pos +=  len(string(runes[1]))
+				futures = append(futures, SearchFuture{order, id, startPos, pos, tr.Get(nextKey)})
+			} else {
+				if lastMatchId == id {
+					continue
+				}
+				item := SearchResultItem{id.(string), startPos}
+				items = append(items, item)
+				lastMatchId = id.(string)
+			}
 		}
 		// Check the second value of futures
 		for i := 2; i <= len(runes); i++ {
 			nextFutures := futures[:0]
-			lastMatchId := ""
 			for _, future := range futures {
 				// Skip duplicated Id from result
 				if lastMatchId == future.Id {
