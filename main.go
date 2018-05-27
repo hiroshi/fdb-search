@@ -109,7 +109,7 @@ func search(dir string, context string, term string) SearchResult {
 	items := []SearchResultItem{}
 	lastMatchId := ""
 
-	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
+	_, err := db.ReadTransact(func (tr fdb.ReadTransaction) (ret interface{}, e error) {
 		// fmt.Printf("transaction: %+v\n", tr)
 		futures := []SearchFuture{}
 
