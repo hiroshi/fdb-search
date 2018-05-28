@@ -58,7 +58,7 @@ func TestSearch(t *testing.T) {
 		t.Errorf("Old term should not be found. result: %+v", result)
 	}
 	// Search new term
-	result = search("-test", "user_1", "更新")
+	result = search("-test", "user_1", "更新した")
 	if result.Count == 0 || result.Items[0].Id != "1" {
 		t.Errorf("New term should be found. result: %+v", result)
 	}

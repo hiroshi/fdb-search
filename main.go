@@ -92,9 +92,9 @@ type SearchResult struct {
 
 type SearchFuture struct {
 	Order int64
-  Id tuple.TupleElement
+	Id tuple.TupleElement
 	StartPos int
-  Pos int
+	RuneIndex int
 	Future fdb.FutureByteSlice
 }
 
@@ -102,68 +102,95 @@ func search(dir string, context string, term string) SearchResult {
 	db, contextSubspace := dbAndContextSubspac(dir, context)
 
 	runes := []rune(strings.ToLower(term))
+	runeIndex := 0
+
 	searchKey := contextSubspace.Sub("R", string(runes[0]))
 	beginKey := searchKey
 	endKey := contextSubspace.Sub("R", string(runes[0]) + "0xFF")
 
+	futures := []SearchFuture{}
+	nextFutures := []SearchFuture{}
+
 	items := []SearchResultItem{}
 	lastMatchId := ""
 
+	// NOTE: ruens and futures are shifted as processed to be able to contine on transaction retry
 	_, err := db.ReadTransact(func (tr fdb.ReadTransaction) (ret interface{}, e error) {
-		// fmt.Printf("transaction: %+v\n", tr)
-		futures := []SearchFuture{}
-
 		// Get an iterator for the first rune
-		keyRange := fdb.KeyRange{beginKey, endKey}
-		ri := tr.GetRange(keyRange, fdb.RangeOptions{Reverse: true}).Iterator()
-		// Iterate through keys for the first rune to get all future of keys for the second rune
-		for ri.Advance() {
-			kv := ri.MustGet()
-			beginKey = subspace.FromBytes(kv.Key)
-			t, err := searchKey.Unpack(kv.Key)
-			if err != nil {
-				log.Fatalf("Uppack failed")
-			}
-			order := t[0].(int64)
-			id := t[1]
-			startPos := int(t[2].(int64))
-			pos := startPos + len(string(runes[0]))
+		fmt.Printf("transaction: len(futures)=%+v\n", len(futures));
 
-			if len(runes) > 1 {
-				nextKey := contextSubspace.Sub("R", string(runes[1]), order, id, pos)
-				pos +=  len(string(runes[1]))
-				futures = append(futures, SearchFuture{order, id, startPos, pos, tr.Get(nextKey)})
-			} else {
-				if lastMatchId == id {
-					continue
-				}
-				item := SearchResultItem{id.(string), startPos}
-				items = append(items, item)
-				lastMatchId = id.(string)
-			}
+		// Refresh futures of old transaction
+		for _, future := range futures {
+			pos := future.StartPos + len(string(runes[:runeIndex]))
+			key := contextSubspace.Sub("R", string(runes[future.RuneIndex]), future.Order, future.Id, pos)
+			future.Future = tr.Get(key)
 		}
-		// Check the second value of futures
-		for i := 2; i <= len(runes); i++ {
-			nextFutures := futures[:0]
-			for _, future := range futures {
-				// Skip duplicated Id from result
-				if lastMatchId == future.Id {
-					continue
+
+		if runeIndex == 0 {
+			keyRange := fdb.KeyRange{beginKey, endKey}
+			// fmt.Printf("transaction: runes=%+v, range=%+v\n", runes, keyRange);
+			ri := tr.GetRange(keyRange, fdb.RangeOptions{Reverse: true}).Iterator()
+			// Iterate through keys for the first rune to get all future of keys for the second rune
+			for ri.Advance() {
+				kv := ri.MustGet()
+				beginKey = subspace.FromBytes(kv.Key)
+				t, err := searchKey.Unpack(kv.Key)
+				if err != nil {
+					log.Fatalf("Uppack failed")
 				}
-				v := future.Future.MustGet()
-				if string(v) != "" {
-					if i + 1 < len(runes) {
-						nextKey := contextSubspace.Sub("R", string(runes[i]), future.Order, future.Id, future.Pos)
-						pos := future.Pos + len(string(runes[i]))
-						nextFutures = append(nextFutures, SearchFuture{future.Order, future.Id, future.StartPos, pos, tr.Get(nextKey)})
-					} else {
-						item := SearchResultItem{future.Id.(string), future.StartPos}
-						items = append(items, item)
-						lastMatchId = future.Id.(string)
+				order := t[0].(int64)
+				id := t[1]
+				startPos := int(t[2].(int64))
+				pos := startPos + len(string(runes[0]))
+
+				if len(runes) > 1 {
+					nextKey := contextSubspace.Sub("R", string(runes[1]), order, id, pos)
+					//pos +=  len(string(runes[1]))
+					futures = append(futures, SearchFuture{order, id, startPos, 1, tr.Get(nextKey)})
+				} else {
+					if lastMatchId == id {
+						continue
+					}
+					item := SearchResultItem{id.(string), startPos}
+					items = append(items, item)
+					lastMatchId = id.(string)
+				}
+			}
+			fmt.Printf("len(futures)=%+v\n", len(futures))
+			runeIndex++
+		}
+		//runes = runes[1:]
+		// fmt.Printf("runes=%+v\n", runes);
+		// Check the second value of futures
+		// for i := 2; i <= len(runes); i++ {
+		// for len(runes) > 0 {
+		for runeIndex < len(runes) {
+			fmt.Printf("runeIndex=%+v\n", runeIndex);
+			nextFutures = futures[:0]
+			for len(futures) > 0 {
+				future := futures[0]
+				// Skip duplicated Id from result
+				if lastMatchId != future.Id {
+					v := future.Future.MustGet()
+					if string(v) != "" {
+						if runeIndex + 1 < len(runes) {
+							// fmt.Printf("runes=%s, len(string[runes[:%d]))=%d\n", string(runes), runeIndex + 1, len(string(runes[:runeIndex + 1])))
+							pos := future.StartPos + len(string(runes[:runeIndex + 1]))
+							nextKey := contextSubspace.Sub("R", string(runes[runeIndex + 1]), future.Order, future.Id, pos)
+							// pos := future.Pos + len(string(runes[runeIndex + 1]))
+							nextFutures = append(nextFutures, SearchFuture{future.Order, future.Id, future.StartPos, runeIndex + 1, tr.Get(nextKey)})
+						} else {
+							item := SearchResultItem{future.Id.(string), future.StartPos}
+							items = append(items, item)
+							lastMatchId = future.Id.(string)
+						}
 					}
 				}
+				futures = futures[1:]
 			}
 			futures = nextFutures
+			// runes = runes[1:]
+			runeIndex++
 		}
 		return
 	})
