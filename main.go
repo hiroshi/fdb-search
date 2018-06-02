@@ -43,7 +43,7 @@ func clearIndex(dir string, context string, id string) {
 			kv := ri.MustGet()
 			t, err := baseKey.Unpack(kv.Key)
 			if err != nil {
-				log.Fatalf("Uppack failed")
+				log.Fatalf("Uppack failed: %+v", err)
 			}
 			order := t[0]
 			str := t[1]
@@ -106,7 +106,7 @@ type SearchFuture struct {
 }
 
 func search(dir string, context string, term string) SearchResult {
-	fmt.Printf("search: term='%+v'\n", term)
+	// fmt.Printf("search: term='%+v'\n", term)
 	db, contextSubspace := dbAndContextSubspac(dir, context)
 
 	runes := []rune(strings.ToLower(term))
@@ -118,7 +118,7 @@ func search(dir string, context string, term string) SearchResult {
 		n = len(runes)
 	}
 	firstString := string(runes[0:n])
-	fmt.Printf("firstString: %+v\n", firstString)
+	// fmt.Printf("firstString: %+v\n", firstString)
 	searchKey := contextSubspace.Sub("R", firstString)
 	beginKey := searchKey
 	endKey := contextSubspace.Sub("R", firstString + "0xFF")
@@ -171,16 +171,16 @@ func search(dir string, context string, term string) SearchResult {
 					// fmt.Printf("beginKey: %+v\n", beginKey)
 					t, err := searchKey.Unpack(kv.Key)
 					if err != nil {
-						log.Fatalf("Uppack failed")
+						log.Fatalf("Uppack failed: %+v", err)
 					}
 					order := t[0].(int64)
 					id := t[1]
 					startPos := int(t[2].(int64))
 					pos := startPos + nextRuneIndex
-					fmt.Printf("startPos: %+v pos:%+v\n", startPos, pos)
+					// fmt.Printf("startPos: %+v pos:%+v\n", startPos, pos)
 					if len(runes) > grams {
 						str := string(runes[nextRuneIndex : nextRuneIndex + grams])
-						fmt.Printf("nextKey: runes[%d:%d], str='%s' order=%d id=%s, pos=%d\n", nextRuneIndex, nextRuneIndex + grams, str, order, id, pos)
+						// fmt.Printf("nextKey: runes[%d:%d], str='%s' order=%d id=%s, pos=%d\n", nextRuneIndex, nextRuneIndex + grams, str, order, id, pos)
 						nextKey := contextSubspace.Sub("R", str, order, id, pos)
 						future := SearchFuture{order, id, startPos, nextRuneIndex, tr.Get(nextKey)}
 						// nextKey := contextSubspace.Sub("R", str)
@@ -212,7 +212,7 @@ func search(dir string, context string, term string) SearchResult {
 					// Skip duplicated Id from result
 					if lastMatchId != future.Id {
 						v := future.Future.MustGet()
-						fmt.Printf("future: %+v => %+v\n", future, v)
+						// fmt.Printf("future: %+v => %+v\n", future, v)
 						if string(v) != "" {
 							if runeIndex + grams < len(runes) {
 								// fmt.Printf("runes=%s, len(string[runes[:%d]))=%d\n", string(runes), runeIndex + 1, len(string(runes[:runeIndex + 1])))
@@ -234,7 +234,7 @@ func search(dir string, context string, term string) SearchResult {
 				// runes = runes[1:]
 				runeIndex++
 			}
-			fmt.Printf("len(items): %+v\n", len(items))
+			// fmt.Printf("len(items): %+v\n", len(items))
 			if rangeContinue {
 				runeIndex = 0
 			}
