@@ -12,12 +12,13 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"unicode/utf8"
+	// "unicode/utf8"
 )
 
+const grams = 3
 // Key structures:
 //   Index for search by the rune:
-//     dir, context, "R", rune, order, id, pos
+//     dir, context, "R", runes, order, id, pos
 //   Index for clear last search index for the id:
 //     dir, context, "I", id, order, rune
 
@@ -45,8 +46,8 @@ func clearIndex(dir string, context string, id string) {
 				log.Fatalf("Uppack failed")
 			}
 			order := t[0]
-			rune := t[1]
-			tr.ClearRange(contextSubspace.Sub("R", rune, order, id))
+			str := t[1]
+			tr.ClearRange(contextSubspace.Sub("R", str, order, id))
 		}
 		tr.ClearRange(baseKey)
 		return
@@ -61,17 +62,22 @@ func createIndex(dir string, context string, order int64, id string, inputText s
 	// Clear last index for the id
 	clearIndex(dir, context, id)
 	// Create index
+	runes := []rune(strings.ToLower(inputText))
+	// fmt.Printf("createIndex: id=%+v text='%+v'[%d]\n", id, inputText, len(runes))
 	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
-		text := strings.ToLower(inputText)
-
-		for i, w := 0, 0; i < len(text); i+= w {
-			r, width := utf8.DecodeRuneInString(text[i:])
+		// for i, w := 0, 0; i < len(text); i+= w {
+		for i, _ := range runes {
+			n := grams
+			if i + n >  len(runes) {
+				n = len(runes) - i
+			}
+			// fmt.Printf("runes[%d:%d]\n", i, n)
+			str := string(runes[i:i+n])
 			// Create key for search
-			tr.Set(contextSubspace.Sub("R", string(r), order, id, i), []byte("\x01"))
+			// fmt.Printf("  key: str=%+v order=%d, id=%s, pos=%d\n", str, order, id, i)
+			tr.Set(contextSubspace.Sub("R", str, order, id, i), []byte("\x01"))
 			// Create key for clear old search key
-			tr.Set(contextSubspace.Sub("I", id, order, string(r)), []byte("\x01"))
-
-			w = width
+			tr.Set(contextSubspace.Sub("I", id, order, str), []byte("\x01"))
 		}
 		return
 	})
@@ -96,18 +102,26 @@ type SearchFuture struct {
 	StartPos int
 	RuneIndex int
 	Future fdb.FutureByteSlice
+	// Future fdb.FutureKey
 }
 
 func search(dir string, context string, term string) SearchResult {
+	fmt.Printf("search: term='%+v'\n", term)
 	db, contextSubspace := dbAndContextSubspac(dir, context)
 
 	runes := []rune(strings.ToLower(term))
 	// Keep status out of transaction to be able to contine on retry
 	runeIndex := 0
 
-	searchKey := contextSubspace.Sub("R", string(runes[0]))
+	n := grams
+	if len(runes) < n {
+		n = len(runes)
+	}
+	firstString := string(runes[0:n])
+	fmt.Printf("firstString: %+v\n", firstString)
+	searchKey := contextSubspace.Sub("R", firstString)
 	beginKey := searchKey
-	endKey := contextSubspace.Sub("R", string(runes[0]) + "0xFF")
+	endKey := contextSubspace.Sub("R", firstString + "0xFF")
 
 	futures := []SearchFuture{}
 	nextFutures := []SearchFuture{}
@@ -120,17 +134,22 @@ func search(dir string, context string, term string) SearchResult {
 		// NOTE: ruens and futures are shifted as processed to be able to contine on transaction retry
 		_, err := db.ReadTransact(func (tr fdb.ReadTransaction) (ret interface{}, e error) {
 			// Get an iterator for the first rune
-			fmt.Printf("transaction: len(futures)=%+v\n", len(futures));
+			// fmt.Printf("transaction: len(futures)=%+v\n", len(futures));
 			// fmt.Printf("transaction: len(items)=%+v\n", len(items));
 
 			// Refresh futures of old transaction
-			for _, future := range futures {
-				pos := future.StartPos + len(string(runes[:runeIndex]))
-				key := contextSubspace.Sub("R", string(runes[future.RuneIndex]), future.Order, future.Id, pos)
-				future.Future = tr.Get(key)
-			}
+			// for _, future := range futures {
+			// 	pos := future.StartPos + len(string(runes[:runeIndex]))
+			// 	key := contextSubspace.Sub("R", string(runes[future.RuneIndex]), future.Order, future.Id, pos)
+			// 	future.Future = tr.Get(key)
+			// }
 
 			if runeIndex == 0 {
+				nextRuneIndex := grams
+				if len(runes) < grams * 2 {
+					nextRuneIndex = len(runes) - grams
+				}
+
 				keyRange := fdb.KeyRange{beginKey, endKey}
 				// fmt.Printf("transaction: runes=%+v, range=%+v\n", runes, keyRange);
 				// fmt.Printf("beginKey=%+v\n", beginKey)
@@ -142,6 +161,7 @@ func search(dir string, context string, term string) SearchResult {
 						break
 					}
 					rangeContinue = ri.Advance()
+					// fmt.Printf("rangeContinue:%+v\n", rangeContinue)
 					if !rangeContinue {
 						break
 					}
@@ -156,12 +176,15 @@ func search(dir string, context string, term string) SearchResult {
 					order := t[0].(int64)
 					id := t[1]
 					startPos := int(t[2].(int64))
-					pos := startPos + len(string(runes[0]))
-
-					if len(runes) > 1 {
-						nextKey := contextSubspace.Sub("R", string(runes[1]), order, id, pos)
-						//pos +=  len(string(runes[1]))
-						future := SearchFuture{order, id, startPos, 1, tr.Get(nextKey)}
+					pos := startPos + nextRuneIndex
+					fmt.Printf("startPos: %+v pos:%+v\n", startPos, pos)
+					if len(runes) > grams {
+						str := string(runes[nextRuneIndex : nextRuneIndex + grams])
+						fmt.Printf("nextKey: runes[%d:%d], str='%s' order=%d id=%s, pos=%d\n", nextRuneIndex, nextRuneIndex + grams, str, order, id, pos)
+						nextKey := contextSubspace.Sub("R", str, order, id, pos)
+						future := SearchFuture{order, id, startPos, nextRuneIndex, tr.Get(nextKey)}
+						// nextKey := contextSubspace.Sub("R", str)
+						// future := SearchFuture{order, id, startPos, 1, tr.GetKey(fdb.FirstGreaterThan(nextKey))}
 						// fmt.Printf("future: %+v\n", future)
 						futures = append(futures, future)
 					} else {
@@ -174,7 +197,7 @@ func search(dir string, context string, term string) SearchResult {
 					}
 				}
 				// fmt.Printf("len(futures)=%+v\n", len(futures))
-				runeIndex++
+				runeIndex = nextRuneIndex
 			}
 			//runes = runes[1:]
 			// fmt.Printf("runes=%+v\n", runes);
@@ -189,13 +212,15 @@ func search(dir string, context string, term string) SearchResult {
 					// Skip duplicated Id from result
 					if lastMatchId != future.Id {
 						v := future.Future.MustGet()
+						fmt.Printf("future: %+v => %+v\n", future, v)
 						if string(v) != "" {
-							if runeIndex + 1 < len(runes) {
+							if runeIndex + grams < len(runes) {
 								// fmt.Printf("runes=%s, len(string[runes[:%d]))=%d\n", string(runes), runeIndex + 1, len(string(runes[:runeIndex + 1])))
 								pos := future.StartPos + len(string(runes[:runeIndex + 1]))
 								nextKey := contextSubspace.Sub("R", string(runes[runeIndex + 1]), future.Order, future.Id, pos)
-								// pos := future.Pos + len(string(runes[runeIndex + 1]))
 								nextFutures = append(nextFutures, SearchFuture{future.Order, future.Id, future.StartPos, runeIndex + 1, tr.Get(nextKey)})
+								// nextKey := contextSubspace.Sub("R", string(runes[runeIndex + 1]), future.Order, future.Id, pos)
+								// nextFutures = append(nextFutures, SearchFuture{future.Order, future.Id, future.StartPos, runeIndex + 1, tr.Get(nextKey)})
 							} else {
 								item := SearchResultItem{future.Id.(string), future.StartPos}
 								items = append(items, item)
