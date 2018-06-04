@@ -169,13 +169,14 @@ func search(dir string, context string, term string) SearchResult {
 					kv := ri.MustGet()
 					endKey = subspace.FromBytes(kv.Key)
 					// fmt.Printf("beginKey: %+v\n", beginKey)
-					t, err := searchKey.Unpack(kv.Key)
+					t, err := contextSubspace.Sub("R").Unpack(kv.Key)
 					if err != nil {
-						log.Fatalf("Uppack failed: %+v", err)
+						log.Fatalf("Unpack failed: %+v.", err)
 					}
-					order := t[0].(int64)
-					id := t[1]
-					startPos := int(t[2].(int64))
+					_ = t[0].(string)
+					order := t[1].(int64)
+					id := t[2]
+					startPos := int(t[3].(int64))
 					pos := startPos + nextRuneIndex
 					// fmt.Printf("startPos: %+v pos:%+v\n", startPos, pos)
 					if len(runes) > grams {
