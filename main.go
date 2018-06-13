@@ -292,7 +292,7 @@ func postIndexHandler(w http.ResponseWriter, r *http.Request) {
 	order, error := strconv.Atoi(orderString)
 	if error != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(w, "Error: order must be integer: order=%v, error=", orderString, error)
+		fmt.Fprintf(w, "Error: order must be integer: order=%v, error=%v", orderString, error)
 		return
 	}
 
@@ -324,7 +324,7 @@ func getSearchHandler(w http.ResponseWriter, r *http.Request) {
 	result := search(dir, context, term)
 	resultJson, err := json.Marshal(result)
 	if err != nil {
-		log.Fatal("json.Marshal(SearchResult) failed: %v", err)
+		log.Fatalf("json.Marshal(SearchResult) failed: %v", err)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprintf(w, string(resultJson))
