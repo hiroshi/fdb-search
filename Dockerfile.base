@@ -1,8 +1,15 @@
-FROM fdb:build-release-5.1
+FROM ubuntu:16.04
 WORKDIR /root
-RUN git clone https://github.com/apple/foundationdb.git
-RUN cd foundationdb && git checkout release-5.1
-# ADD foundationdb /root/foundationdb
-# https://github.com/apple/foundationdb/tree/master/bindings/go
-RUN cd /root/foundationdb && make fdb_go
-# RUN cd /root/foundationdb && make default fdb_go
+RUN apt-get update && \
+    apt-get install -y \
+      git \
+      python \
+      golang-1.10-go
+RUN ln -s /usr/lib/go-1.10 /usr/lib/go
+ENV PATH=/usr/lib/go/bin:$PATH
+ADD https://www.foundationdb.org/downloads/5.1.7/ubuntu/installers/foundationdb-clients_5.1.7-1_amd64.deb .
+RUN dpkg -i foundationdb-clients_5.1.7-1_amd64.deb
+ENV GOPATH=/root/go
+RUN go get -vd github.com/apple/foundationdb/bindings/go/src/fdb && \
+    cd $GOPATH/src/github.com/apple/foundationdb && git checkout 5.1.7 && \
+    go get -v github.com/apple/foundationdb/bindings/go/src/fdb
