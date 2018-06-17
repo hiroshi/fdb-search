@@ -9,7 +9,7 @@ docker-push:
 
 PORT = 1234
 docker-test-run:
-	docker run --rm -ti -v fdb:/etc/foundationdb -e PORT=$(PORT) -p $(PORT):$(PORT) $(IMAGE) ./fdb-search
+	docker run --rm -ti -v fdb-search_fdb:/etc/foundationdb -e PORT=$(PORT) -p $(PORT):$(PORT) $(IMAGE) ./fdb-search
 
 # build a docker image that contain FoundationDB go binding
 docker-build-fdb-go:
