@@ -36,3 +36,16 @@ $ docker run -ti --rm -v fdb-0:/etc/foundationdb -e PORT=1234 -p 1234:1234 \
 ```
 
 For more infomation about the `hiroshi3110/foundationdb` dockder image, see https://github.com/hiroshi/foundationdb-docker.
+
+## Development
+
+### Build a docker image for development
+
+```
+$ make docker-build-fdb-go
+```
+
+### Test
+```
+$ docker-compose run --rm fdb-search go test -v
+```

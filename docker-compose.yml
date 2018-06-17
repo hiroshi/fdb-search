@@ -1,0 +1,21 @@
+version: '3'
+services:
+  fdb-search:
+    image: fdb-go
+    command: go run main.go
+    working_dir: /root/go/src/github.com/hiroshi/fdb-search
+    ports:
+    - '1234:1234'
+    volumes:
+    - fdb:/etc/foundationdb
+    - .:/root/go/src/github.com/hiroshi/fdb-search
+    depends_on:
+    - foundationdb
+  foundationdb:
+    image: hiroshi3110/foundationdb:5.1.5-1_ubuntu-16.04
+    command: ./start.sh
+    volumes:
+    - fdb:/var/lib/foundationdb
+    hostname: fdb
+volumes:
+  fdb:
