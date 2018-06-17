@@ -29,7 +29,7 @@ func TestClearDirectory(t *testing.T) {
 	createIndex("-test", "user_1", 0, "doc_1", "日本語の content")
 	searchResult := search("-test", "user_1", "content")
 	if len(searchResult.Items) == 0 {
-		t.Errorf("Precondition failed. searchResult: %v", searchResult)
+		t.Errorf("Precondition failed. searchResult: %+v", searchResult)
 	}
 
 	db := fdb.MustOpenDefault()
@@ -37,48 +37,72 @@ func TestClearDirectory(t *testing.T) {
 
 	searchResult = search("-test", "user_1", "content")
 	if len(searchResult.Items) > 0 {
-		t.Errorf("Directory not cleared. searchResult: %v", searchResult)
+		t.Errorf("Directory not cleared. searchResult: %+v", searchResult)
 	}
 }
 
 func TestSearch(t *testing.T) {
 	fdb.MustAPIVersion(510)
 	db := fdb.MustOpenDefault()
-	clearDirectory(t, db, "-test")
 
-	createIndex("-test", "user_1", 0, "1", "id:1 の最初の text")
-	createIndex("-test", "user_1", 2, "1", "id:1 の更新した text")
-	createIndex("-test", "user_1", 1, "2", "text contenxt of id:2")
-	createIndex("-test", "user_1", 3, "3", "text of id:3")
-	createIndex("-test", "user_2", 3, "a", "text contenxt for user_2")
+	t.Run("single character", func(t *testing.T) {
+		clearDirectory(t, db, "-test")
 
-	// Search deleted old term
-	result := search("-test", "user_1", "最初")
-	if result.Count > 0 {
-		t.Errorf("Old term should not be found. result: %+v", result)
-	}
-	// Search new term
-	result = search("-test", "user_1", "更新した")
-	if result.Count == 0 || result.Items[0].Id != "1" {
-		t.Errorf("New term should be found. result: %+v", result)
-	}
-	// Search result order
-	result = search("-test", "user_1", "text")
-	if result.Count != 3 || result.Items[0].Id != "3" || result.Items[1].Id != "1" || result.Items[2].Id != "2" {
-	 	t.Errorf("result.Items sholuld be in order of id [3,1,2]. result: %+v", result)
-	}
-	// Unique id in a result
-	createIndex("-test", "user_1", 0, "4", "duplicated duplicated")
-	createIndex("-test", "user_1", 0, "5", "not duplicated")
-	result = search("-test", "user_1", "dup")
-	if result.Count != 2 {
-	 	t.Errorf("result.Items[].Id must be unique. result: %+v", result)
-	}
+		createIndex("-test", "user_1", 0, "1", "test")
 
-	// Search single character
-	createIndex("-test", "user_3", 0, "1", "test")
-	result = search("-test", "user_3", "t")
-	if result.Count != 1 {
-		t.Errorf("result.Items[].Id must be unique. result: %+v", result)
-	}
+		result := search("-test", "user_1", "t")
+		if result.Count != 1 {
+			t.Errorf("result.Count must be 1. result: %+v", result)
+		}
+	})
+
+	t.Run("more than 6 characters", func(t *testing.T) {
+		clearDirectory(t, db, "-test")
+
+		createIndex("-test", "user_1", 0, "1", "test content.")
+
+		result := search("-test", "user_1", "content")
+		if result.Count != 1 {
+			t.Errorf("result.Count must be 1. result: %+v", result)
+		}
+	})
+
+	t.Run("updated content", func(t *testing.T) {
+		clearDirectory(t, db, "-test")
+
+		createIndex("-test", "user_1", 0, "1", "id:1 の最初の text")
+		createIndex("-test", "user_1", 2, "1", "id:1 の更新した text")
+
+		result := search("-test", "user_1", "最初")
+		if result.Count != 0 {
+			t.Errorf("Old term should not be found. result: %+v", result)
+		}
+		result = search("-test", "user_1", "更新した")
+		if result.Count != 1 || result.Items[0].Id != "1" {
+			t.Errorf("New term should be found. result: %+v", result)
+		}
+	})
+
+	t.Run("Multiple term in a context of single id", func(t *testing.T) {
+		clearDirectory(t, db, "-test")
+
+		createIndex("-test", "user_1", 0, "4", "duplicated duplicated")
+
+		result := search("-test", "user_1", "dup")
+		if result.Count != 1 {
+			t.Errorf("result.Items[].Id must be unique. result: %+v", result)
+		}
+	})
+
+	t.Run("Multiple items in a result", func(t *testing.T) {
+		clearDirectory(t, db, "-test")
+
+		createIndex("-test", "user_1", 0, "4", "duplicated duplicated")
+		createIndex("-test", "user_1", 0, "5", "not duplicated")
+
+		result := search("-test", "user_1", "dup")
+		if result.Count != 2 {
+			t.Errorf("result.Items[].Id must be unique. result: %+v", result)
+		}
+	})
 }
