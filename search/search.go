@@ -1,12 +1,8 @@
 package search
 
 import (
-	// "encoding/json"
-	// "os"
-	"log"
 	// "fmt"
-	// "net/http"
-	// "strconv"
+	"log"
 	"strings"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
@@ -104,6 +100,19 @@ type SearchFuture struct {
 	Future fdb.FutureByteSlice
 }
 
+// func forward() () {
+// 		if runeIndex + grams < len(runes) {
+// 			str := string(runes[nextRuneIndex : nextRuneIndex + grams])
+// 			pos := future.StartPos + nextRuneIndex
+// 			nextKey := contextSubspace.Sub("R", str, future.Order, future.Id, pos)
+// 			nextFutures = append(nextFutures, SearchFuture{future.Order, future.Id, future.StartPos, nextRuneIndex, tr.Get(nextKey)})
+// 		} else {
+// 			item := SearchResultItem{future.Id.(string), future.StartPos}
+// 			items = append(items, item)
+// 			lastMatchId = future.Id.(string)
+// 		}
+// }
+
 func Search(dir string, context string, term string) SearchResult {
 	db, contextSubspace := dbAndContextSubspac(dir, context)
 
@@ -129,83 +138,81 @@ func Search(dir string, context string, term string) SearchResult {
 	for rangeContinue {
 		// NOTE: ruens and futures are shifted as processed to be able to contine on transaction retry
 		_, err := db.ReadTransact(func (tr fdb.ReadTransaction) (ret interface{}, e error) {
-			if runeIndex == 0 {
-				nextRuneIndex := grams
-				if len(runes) < grams * 2 {
+			// fmt.Printf("%v < %v\n", runeIndex, len(runes))
+			for {
+				// fmt.Printf("%v < %v\n", runeIndex, len(runes))
+				nextRuneIndex := runeIndex + grams
+				if runeIndex + grams < len(runes) && len(runes) < runeIndex + grams * 2 {
 					nextRuneIndex = len(runes) - grams
 				}
 
-				keyRange := fdb.KeyRange{beginKey, endKey}
-				ri := tr.GetRange(keyRange, fdb.RangeOptions{Reverse: true}).Iterator()
-				// Iterate through keys for the first rune to get all future of keys for the second rune
-				for rangeContinue {
-					if len(futures) > 10000 {
-						break
-					}
-					rangeContinue = ri.Advance()
-					if !rangeContinue {
-						break
-					}
-					kv := ri.MustGet()
-					endKey = subspace.FromBytes(kv.Key)
-					t, err := contextSubspace.Sub("R").Unpack(kv.Key)
-					if err != nil {
-						log.Fatalf("Unpack failed: %+v.", err)
-					}
-					_ = t[0].(string)
-					order := t[1].(int64)
-					id := t[2]
-					startPos := int(t[3].(int64))
-					pos := startPos + nextRuneIndex
-					if len(runes) > grams {
-						str := string(runes[nextRuneIndex : nextRuneIndex + grams])
-						nextKey := contextSubspace.Sub("R", str, order, id, pos)
-						future := SearchFuture{order, id, startPos, nextRuneIndex, tr.Get(nextKey)}
-						futures = append(futures, future)
-					} else {
-						if lastMatchId == id {
-							continue
+				if runeIndex == 0 {
+					keyRange := fdb.KeyRange{beginKey, endKey}
+					ri := tr.GetRange(keyRange, fdb.RangeOptions{Reverse: true}).Iterator()
+					// Iterate through keys for the first rune to get all future of keys for the second rune
+					for rangeContinue {
+						if len(futures) > 10000 {
+							break
 						}
-						item := SearchResultItem{id.(string), startPos}
-						items = append(items, item)
-						lastMatchId = id.(string)
+						rangeContinue = ri.Advance()
+						if !rangeContinue {
+							break
+						}
+						kv := ri.MustGet()
+						endKey = subspace.FromBytes(kv.Key)
+						t, err := contextSubspace.Sub("R").Unpack(kv.Key)
+						if err != nil {
+							log.Fatalf("Unpack failed: %+v.", err)
+						}
+						_ = t[0].(string)
+						order := t[1].(int64)
+						id := t[2]
+						startPos := int(t[3].(int64))
+						pos := startPos + nextRuneIndex
+						if len(runes) > grams {
+							str := string(runes[nextRuneIndex : nextRuneIndex + grams])
+							nextKey := contextSubspace.Sub("R", str, order, id, pos)
+							future := SearchFuture{order, id, startPos, nextRuneIndex, tr.Get(nextKey)}
+							futures = append(futures, future)
+						} else {
+							if lastMatchId == id {
+								continue
+							}
+							item := SearchResultItem{id.(string), startPos}
+							items = append(items, item)
+							lastMatchId = id.(string)
+						}
 					}
-				}
-				runeIndex = nextRuneIndex
-			}
-			// fmt.Printf("%v < %v\n", runeIndex, len(runes))
-			for runeIndex < len(runes) {
-				nextFutures = futures[:0]
-				nextRuneIndex := runeIndex + grams
-				if nextRuneIndex + grams > len(runes) {
-					nextRuneIndex = len(runes) - grams
-				}
-				for len(futures) > 0 {
-					future := futures[0]
-					// Skip duplicated Id from result
-					if lastMatchId != future.Id {
-						v := future.Future.MustGet()
-						if string(v) != "" {
-							if runeIndex + grams < len(runes) {
-								str := string(runes[nextRuneIndex : nextRuneIndex + grams])
-								pos := future.StartPos + nextRuneIndex
-								nextKey := contextSubspace.Sub("R", str, future.Order, future.Id, pos)
-								nextFutures = append(nextFutures, SearchFuture{future.Order, future.Id, future.StartPos, nextRuneIndex, tr.Get(nextKey)})
-							} else {
-								item := SearchResultItem{future.Id.(string), future.StartPos}
-								items = append(items, item)
-								lastMatchId = future.Id.(string)
+					runeIndex = nextRuneIndex
+				} else {
+					nextFutures = futures[:0]
+
+					for len(futures) > 0 {
+						future := futures[0]
+						// Skip duplicated Id from result
+						if lastMatchId != future.Id {
+							v := future.Future.MustGet()
+							if string(v) != "" {
+								if runeIndex + grams < len(runes) {
+									str := string(runes[nextRuneIndex : nextRuneIndex + grams])
+									pos := future.StartPos + nextRuneIndex
+									nextKey := contextSubspace.Sub("R", str, future.Order, future.Id, pos)
+									nextFutures = append(nextFutures, SearchFuture{future.Order, future.Id, future.StartPos, nextRuneIndex, tr.Get(nextKey)})
+								} else {
+									item := SearchResultItem{future.Id.(string), future.StartPos}
+									items = append(items, item)
+									lastMatchId = future.Id.(string)
+								}
 							}
 						}
+						futures = futures[1:]
 					}
-					futures = futures[1:]
+					futures = nextFutures
+					if runeIndex + grams >= len(runes) {
+						break
+					}
+					runeIndex = nextRuneIndex
 				}
-				futures = nextFutures
-
-				if runeIndex + grams == len(runes) {
-					break
-				}
-				runeIndex = nextRuneIndex
 			}
 			if rangeContinue {
 				runeIndex = 0
