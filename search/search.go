@@ -124,9 +124,13 @@ func Search(dir string, context string, term string) SearchResult {
 		n = len(runes)
 	}
 	firstString := string(runes[0:n])
-	searchKey := contextSubspace.Sub("R", firstString)
-	beginKey := searchKey
-	endKey := contextSubspace.Sub("R", firstString + "0xFF")
+	beginBytes := append(append(contextSubspace.Sub("R").Bytes(), 0x02), []byte(firstString)...)
+	beginKey := fdb.Key(beginBytes)
+	endBytes, err := fdb.Strinc(beginBytes)
+	if err != nil {
+		log.Fatalf("fdb.Strinc() failed: %+v.", err)
+	}
+	endKey := fdb.Key(endBytes)
 
 	futures := []SearchFuture{}
 	nextFutures := []SearchFuture{}
@@ -159,7 +163,8 @@ func Search(dir string, context string, term string) SearchResult {
 							break
 						}
 						kv := ri.MustGet()
-						endKey = subspace.FromBytes(kv.Key)
+						// endKey = subspace.FromBytes(kv.Key)
+						endKey = kv.Key
 						t, err := contextSubspace.Sub("R").Unpack(kv.Key)
 						if err != nil {
 							log.Fatalf("Unpack failed: %+v.", err)

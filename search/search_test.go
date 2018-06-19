@@ -1,11 +1,12 @@
 package search
 import (
+	"fmt"
+	"testing"
+
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
   "github.com/apple/foundationdb/bindings/go/src/fdb/directory"
   // "github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
   // "github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
-	// "fmt"
-	"testing"
 )
 
 func clearDirectory(t *testing.T, db fdb.Transactor, dirName string) {
@@ -45,27 +46,18 @@ func TestSearch(t *testing.T) {
 	fdb.MustAPIVersion(510)
 	db := fdb.MustOpenDefault()
 
-	t.Run("single character", func(t *testing.T) {
-		clearDirectory(t, db, "-test")
+	for n := 1; n < 10; n++ {
+		t.Run(fmt.Sprintf("%v characters term", n), func(t *testing.T) {
+			clearDirectory(t, db, "-test")
 
-		CreateIndex("-test", "user_1", 0, "1", "test")
+			CreateIndex("-test", "user_1", 0, "1", "1234567890abcdef")
 
-		result := Search("-test", "user_1", "t")
-		if result.Count != 1 {
-			t.Errorf("result.Count must be 1. result: %+v", result)
-		}
-	})
-
-	t.Run("more than 6 characters", func(t *testing.T) {
-		clearDirectory(t, db, "-test")
-
-		CreateIndex("-test", "user_1", 0, "1", "test content.")
-
-		result := Search("-test", "user_1", "content")
-		if result.Count != 1 {
-			t.Errorf("result.Count must be 1. result: %+v", result)
-		}
-	})
+			result := Search("-test", "user_1", "1234567890abcdef"[0:n])
+			if result.Count != 1 {
+				t.Errorf("result.Count must be 1. result: %+v", result)
+			}
+		})
+	}
 
 	t.Run("updated content", func(t *testing.T) {
 		clearDirectory(t, db, "-test")
