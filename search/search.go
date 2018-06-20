@@ -112,50 +112,37 @@ func Search(dir string, context string, term string) SearchResult {
 	if len(runes) < n {
 		n = len(runes)
 	}
-	firstString := string(runes[0:n])
-	beginBytes := append(append(contextSubspace.Sub("R").Bytes(), 0x02), []byte(firstString)...)
-	beginKey := fdb.Key(beginBytes)
-	endBytes, err := fdb.Strinc(beginBytes)
+
+	keyBytes := append(append(contextSubspace.Sub("R").Bytes(), 0x02), []byte(string(runes[0:n]))...)
+	beginKey := fdb.Key(keyBytes)
+	endBytes, err := fdb.Strinc(keyBytes)
 	if err != nil {
 		log.Fatalf("fdb.Strinc() failed: %+v.", err)
 	}
 	endKey := fdb.Key(endBytes)
 
 	futures := []SearchFuture{}
-	nextFutures := []SearchFuture{}
-
 	items := []SearchResultItem{}
 	lastMatchId := ""
 
-	rangeContinue := true
-	for rangeContinue {
+	for rangeContinue := true; rangeContinue; {
 		// NOTE: ruens and futures are shifted as processed to be able to contine on transaction retry
 		_, err := db.ReadTransact(func (tr fdb.ReadTransaction) (ret interface{}, e error) {
-			// fmt.Printf("%v < %v\n", runeIndex, len(runes))
 			for {
-				// fmt.Printf("%v < %v\n", runeIndex, len(runes))
 				nextRuneIndex := runeIndex + grams
 				if runeIndex + grams < len(runes) && len(runes) < runeIndex + grams * 2 {
 					nextRuneIndex = len(runes) - grams
 				}
 
 				if runeIndex == 0 {
-					keyRange := fdb.KeyRange{beginKey, endKey}
-					// fmt.Printf("beginKey: %#v\n", beginKey)
-					// fmt.Printf("endKey  : %#v\n", endKey)
-					ri := tr.GetRange(keyRange, fdb.RangeOptions{Reverse: true}).Iterator()
+					ri := tr.GetRange(fdb.KeyRange{beginKey, endKey}, fdb.RangeOptions{Reverse: true}).Iterator()
 					// Iterate through keys for the first rune to get all future of keys for the second rune
-					for rangeContinue {
-						if len(futures) > 10000 {
-							break
-						}
+					for rangeContinue && len(futures) <= 10000 {
 						rangeContinue = ri.Advance()
-						// fmt.Printf("continue: %#v\n", rangeContinue)
 						if !rangeContinue {
 							break
 						}
 						kv := ri.MustGet()
-						// endKey = subspace.FromBytes(kv.Key)
 						endKey = kv.Key
 						t, err := contextSubspace.Sub("R").Unpack(kv.Key)
 						if err != nil {
@@ -181,7 +168,7 @@ func Search(dir string, context string, term string) SearchResult {
 						}
 					}
 				} else {
-					nextFutures = futures[:0]
+					nextFutures := futures[:0]
 
 					for len(futures) > 0 {
 						future := futures[0]
@@ -207,9 +194,9 @@ func Search(dir string, context string, term string) SearchResult {
 					if runeIndex + grams > len(runes) {
 						break
 					}
-				}
+				} // rundINdex == 0 else
 				runeIndex = nextRuneIndex
-			}
+			} // for runeIndex
 			if rangeContinue {
 				runeIndex = 0
 			}

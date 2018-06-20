@@ -98,3 +98,24 @@ func TestSearch(t *testing.T) {
 		}
 	})
 }
+
+func TestLarge(t *testing.T) {
+	fdb.MustAPIVersion(510)
+	db := fdb.MustOpenDefault()
+
+	t.Run("More than 10,000 keys GetRange.", func(t *testing.T) {
+		clearDirectory(t, db, "-test")
+
+		content := make([]byte, 200)
+		for i := 0; i < 200; i++ {
+			content[i] = 'a'
+		}
+		for i := 0; i < 200; i++ {
+			CreateIndex("-test", "user_1", 0, string(i), string(content))
+		}
+		result := Search("-test", "user_1", "aaaa")
+		if result.Count != 200 {
+			t.Errorf("result.Count must be 200. result: %+v", result.Count)
+		}
+	})
+}
