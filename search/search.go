@@ -148,16 +148,13 @@ func Search(dir string, context string, term string) SearchResult {
 						if err != nil {
 							log.Fatalf("Unpack failed: %+v.", err)
 						}
-						_ = t[0].(string)
-						order := t[1].(int64)
 						id := t[2]
 						startPos := int(t[3].(int64))
-						pos := startPos + nextRuneIndex
 						if len(runes) > grams {
+							order := t[1].(int64)
 							str := string(runes[nextRuneIndex : nextRuneIndex + grams])
-							nextKey := contextSubspace.Sub("R", str, order, id, pos)
-							future := SearchFuture{order, id, startPos, nextRuneIndex, tr.Get(nextKey)}
-							futures = append(futures, future)
+							nextKey := contextSubspace.Sub("R", str, order, id, startPos + nextRuneIndex)
+							futures = append(futures, SearchFuture{order, id, startPos, nextRuneIndex, tr.Get(nextKey)})
 						} else {
 							if lastMatchId == id {
 								continue
@@ -178,8 +175,7 @@ func Search(dir string, context string, term string) SearchResult {
 							if string(v) != "" {
 								if runeIndex + grams < len(runes) {
 									str := string(runes[nextRuneIndex : nextRuneIndex + grams])
-									pos := future.StartPos + nextRuneIndex
-									nextKey := contextSubspace.Sub("R", str, future.Order, future.Id, pos)
+									nextKey := contextSubspace.Sub("R", str, future.Order, future.Id, future.StartPos + nextRuneIndex)
 									nextFutures = append(nextFutures, SearchFuture{future.Order, future.Id, future.StartPos, nextRuneIndex, tr.Get(nextKey)})
 								} else {
 									item := SearchResultItem{future.Id.(string), future.StartPos}
