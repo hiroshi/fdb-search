@@ -71,7 +71,9 @@ func CreateIndex(dir string, context string, order int64, id string, inputText s
 			str := string(runes[i:i+n])
 			// Create key for search
 			// fmt.Printf("  key: str=%+v order=%d, id=%s, pos=%d\n", str, order, id, i)
-			tr.Set(contextSubspace.Sub("R", str, order, id, i), []byte("\x01"))
+			key := contextSubspace.Sub("R", str, order, id, i)
+			// fmt.Printf("creatKey: %#v\n", fdb.Key(key.Bytes()))
+			tr.Set(key, []byte("\x01"))
 			// Create key for clear old search key
 			tr.Set(contextSubspace.Sub("I", id, order, str), []byte("\x01"))
 		}
@@ -99,19 +101,6 @@ type SearchFuture struct {
 	RuneIndex int
 	Future fdb.FutureByteSlice
 }
-
-// func forward() () {
-// 		if runeIndex + grams < len(runes) {
-// 			str := string(runes[nextRuneIndex : nextRuneIndex + grams])
-// 			pos := future.StartPos + nextRuneIndex
-// 			nextKey := contextSubspace.Sub("R", str, future.Order, future.Id, pos)
-// 			nextFutures = append(nextFutures, SearchFuture{future.Order, future.Id, future.StartPos, nextRuneIndex, tr.Get(nextKey)})
-// 		} else {
-// 			item := SearchResultItem{future.Id.(string), future.StartPos}
-// 			items = append(items, item)
-// 			lastMatchId = future.Id.(string)
-// 		}
-// }
 
 func Search(dir string, context string, term string) SearchResult {
 	db, contextSubspace := dbAndContextSubspac(dir, context)
@@ -152,6 +141,8 @@ func Search(dir string, context string, term string) SearchResult {
 
 				if runeIndex == 0 {
 					keyRange := fdb.KeyRange{beginKey, endKey}
+					// fmt.Printf("beginKey: %#v\n", beginKey)
+					// fmt.Printf("endKey  : %#v\n", endKey)
 					ri := tr.GetRange(keyRange, fdb.RangeOptions{Reverse: true}).Iterator()
 					// Iterate through keys for the first rune to get all future of keys for the second rune
 					for rangeContinue {
@@ -159,6 +150,7 @@ func Search(dir string, context string, term string) SearchResult {
 							break
 						}
 						rangeContinue = ri.Advance()
+						// fmt.Printf("continue: %#v\n", rangeContinue)
 						if !rangeContinue {
 							break
 						}
@@ -188,7 +180,6 @@ func Search(dir string, context string, term string) SearchResult {
 							lastMatchId = id.(string)
 						}
 					}
-					runeIndex = nextRuneIndex
 				} else {
 					nextFutures = futures[:0]
 
@@ -213,11 +204,11 @@ func Search(dir string, context string, term string) SearchResult {
 						futures = futures[1:]
 					}
 					futures = nextFutures
-					if runeIndex + grams >= len(runes) {
+					if runeIndex + grams > len(runes) {
 						break
 					}
-					runeIndex = nextRuneIndex
 				}
+				runeIndex = nextRuneIndex
 			}
 			if rangeContinue {
 				runeIndex = 0
