@@ -136,7 +136,6 @@ func Search(dir string, context string, term string) SearchResult {
 
 				if runeIndex == 0 {
 					ri := tr.GetRange(fdb.KeyRange{beginKey, endKey}, fdb.RangeOptions{Reverse: true}).Iterator()
-					// Iterate through keys for the first rune to get all future of keys for the second rune
 					for rangeContinue && len(futures) <= 10000 {
 						rangeContinue = ri.Advance()
 						if !rangeContinue {
@@ -150,7 +149,7 @@ func Search(dir string, context string, term string) SearchResult {
 						}
 						id := t[2]
 						startPos := int(t[3].(int64))
-						if len(runes) > grams {
+						if runeIndex + grams < len(runes) {
 							order := t[1].(int64)
 							str := string(runes[nextRuneIndex : nextRuneIndex + grams])
 							nextKey := contextSubspace.Sub("R", str, order, id, startPos + nextRuneIndex)
