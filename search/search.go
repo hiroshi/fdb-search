@@ -102,19 +102,6 @@ type SearchFuture struct {
 	Future fdb.FutureByteSlice
 }
 
-func (future *SearchFuture)process(futures []SearchFuture, items []SearchResultItem, runeIndex int, lastMatchId string, nextRuneIndex int, runes []rune, contextSubspace subspace.Subspace, tr fdb.ReadTransaction) ([]SearchFuture, []SearchResultItem, string) {
-	if runeIndex + grams < len(runes) {
-		str := string(runes[nextRuneIndex : nextRuneIndex + grams])
-		nextKey := contextSubspace.Sub("R", str, future.Order, future.Id, future.StartPos + nextRuneIndex)
-		futures = append(futures, SearchFuture{future.Order, future.Id, future.StartPos, nextRuneIndex, tr.Get(nextKey)})
-	} else if lastMatchId != future.Id {
-		item := SearchResultItem{future.Id.(string), future.StartPos}
-		items = append(items, item)
-		lastMatchId = future.Id.(string)
-	}
-	return futures, items, lastMatchId
-}
-
 func Search(dir string, context string, term string) SearchResult {
 	db, contextSubspace := dbAndContextSubspac(dir, context)
 
@@ -147,6 +134,19 @@ func Search(dir string, context string, term string) SearchResult {
 					nextRuneIndex = len(runes) - grams
 				}
 
+				process := func(futures []SearchFuture, future SearchFuture) []SearchFuture {
+					if runeIndex + grams < len(runes) {
+						str := string(runes[nextRuneIndex : nextRuneIndex + grams])
+						nextKey := contextSubspace.Sub("R", str, future.Order, future.Id, future.StartPos + nextRuneIndex)
+						futures = append(futures, SearchFuture{future.Order, future.Id, future.StartPos, nextRuneIndex, tr.Get(nextKey)})
+					} else if lastMatchId != future.Id {
+						item := SearchResultItem{future.Id.(string), future.StartPos}
+						items = append(items, item)
+						lastMatchId = future.Id.(string)
+					}
+					return futures
+				}
+
 				if runeIndex == 0 {
 					ri := tr.GetRange(fdb.KeyRange{beginKey, endKey}, fdb.RangeOptions{Reverse: true}).Iterator()
 					for rangeContinue && len(futures) <= 10000 {
@@ -160,8 +160,7 @@ func Search(dir string, context string, term string) SearchResult {
 						if err != nil {
 							log.Fatalf("Unpack failed: %+v.", err)
 						}
-						future := SearchFuture{Order: t[1].(int64), Id: t[2], StartPos: int(t[3].(int64))}
-						futures, items, lastMatchId = future.process(futures, items, runeIndex, lastMatchId, nextRuneIndex, runes, contextSubspace, tr)
+						futures = process(futures, SearchFuture{Order: t[1].(int64), Id: t[2], StartPos: int(t[3].(int64))})
 					}
 				} else {
 					nextFutures := futures[:0]
@@ -172,7 +171,7 @@ func Search(dir string, context string, term string) SearchResult {
 						if lastMatchId != future.Id {
 							v := future.Future.MustGet()
 							if string(v) != "" {
-								nextFutures, items, lastMatchId = future.process(nextFutures, items, runeIndex, lastMatchId, nextRuneIndex, runes, contextSubspace, tr)
+								nextFutures = process(nextFutures, future)
 							}
 						}
 						futures = futures[1:]
