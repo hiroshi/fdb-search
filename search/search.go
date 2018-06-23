@@ -108,12 +108,11 @@ func Search(dir string, context string, term string) SearchResult {
 	runes := []rune(strings.ToLower(term))
 	runeIndex := 0
 
-	n := grams
-	if len(runes) < n {
-		n = len(runes)
+	firstRunes := runes
+	if len(runes) > grams {
+		firstRunes = runes[:grams]
 	}
-
-	keyBytes := append(append(contextSubspace.Sub("R").Bytes(), 0x02), []byte(string(runes[0:n]))...)
+	keyBytes := append(append(contextSubspace.Sub("R").Bytes(), 0x02), []byte(string(firstRunes))...)
 	beginKey := fdb.Key(keyBytes)
 	endBytes, err := fdb.Strinc(keyBytes)
 	if err != nil {
