@@ -173,7 +173,7 @@ func Search(dir string, context string, term string) SearchResult {
 					if runeIndex + grams > len(runes) {
 						break
 					}
-				} // rundINdex == 0 else
+				}
 				runeIndex = nextRuneIndex
 			} // for runeIndex
 			if rangeContinue {

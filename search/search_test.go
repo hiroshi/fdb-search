@@ -59,6 +59,39 @@ func TestSearch(t *testing.T) {
 		})
 	}
 
+	t.Run("last character", func(t *testing.T) {
+		clearDirectory(t, db, "-test")
+
+		CreateIndex("-test", "user_1", 0, "1", "1234567890abcdef")
+
+		result := Search("-test", "user_1", "f")
+		if result.Count != 1 {
+			t.Errorf("result.Count must be 1. result: %+v", result)
+		}
+	})
+
+	t.Run("second last character", func(t *testing.T) {
+		clearDirectory(t, db, "-test")
+
+		CreateIndex("-test", "user_1", 0, "1", "1234567890abcdef")
+
+		result := Search("-test", "user_1", "e")
+		if result.Count != 1 {
+			t.Errorf("result.Count must be 1. result: %+v", result)
+		}
+	})
+
+	t.Run("last two characters", func(t *testing.T) {
+		clearDirectory(t, db, "-test")
+
+		CreateIndex("-test", "user_1", 0, "1", "1234567890abcdef")
+
+		result := Search("-test", "user_1", "ef")
+		if result.Count != 1 {
+			t.Errorf("result.Count must be 1. result: %+v", result)
+		}
+	})
+
 	t.Run("updated content", func(t *testing.T) {
 		clearDirectory(t, db, "-test")
 
