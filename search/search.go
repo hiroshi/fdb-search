@@ -164,13 +164,11 @@ func Search(dir string, context string, term string) SearchResult {
 					}
 				} else {
 					nextFutures := futures[:0]
-					for len(futures) > 0 {
-						future := futures[0]
+					for _, future := range futures {
 						v := future.Future.MustGet()
 						if string(v) != "" {
 							nextFutures = process(nextFutures, future)
 						}
-						futures = futures[1:]
 					}
 					futures = nextFutures
 					if runeIndex + grams > len(runes) {
