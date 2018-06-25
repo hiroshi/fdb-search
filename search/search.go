@@ -75,9 +75,15 @@ func ClearIndex(dir string, context string, id string) {
 				log.Fatalf("Uppack failed: %+v", err)
 			}
 			order := t[0]
-			str := t[1]
-			key := contextDirSub.Sub(str, order, id)
-			tr.ClearRange(key)
+			runes := []rune(strings.ToLower(string(kv.Value)))
+			for i, _ := range runes {
+				n := grams
+				if i + n >  len(runes) {
+					n = len(runes) - i
+				}
+				tr.Clear(contextDirSub.Sub(string(runes[i:i+n]), order, id, i))
+			}
+			tr.Clear(kv.Key)
 		}
 		_, err := contextIdDirSub.Remove(tr, []string{})
 		if err != nil {
@@ -105,12 +111,11 @@ func CreateIndex(dir string, context string, order int64, id string, inputText s
 				n = len(runes) - i
 			}
 			str := string(runes[i:i+n])
-			// Create key for search
 			key := contextDirSub.Sub(str, order, id, i)
 			tr.Set(key, []byte("\x01"))
-			// Create key for clear old search key
-			tr.Set(contextIdDirSub.Sub(order, str), []byte("\x01"))
 		}
+		// Create key for clear
+		tr.Set(contextIdDirSub.Sub(order), []byte(inputText))
 		return
 	})
 	if err != nil {
