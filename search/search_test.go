@@ -10,12 +10,24 @@ import (
 )
 
 func clearDirectory(t *testing.T, db fdb.Transactor, dirName string) {
-	// Directory subspace
-	dir, err := directory.CreateOrOpen(db, []string{dirName}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
+	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
+		dir, err := directory.CreateOrOpen(db, []string{dirName}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ri := tr.GetRange(dir, fdb.RangeOptions{}).Iterator()
+		for ri.Advance() {
+			kv := ri.MustGet()
+			tuple, err := dir.Unpack(kv.Key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			keyRange, err := fdb.PrefixRange(tuple[0].([]byte))
+			if err != nil {
+				t.Fatal(err)
+			}
+			tr.ClearRange(keyRange)
+		}
 		tr.ClearRange(dir)
 		return
 	})

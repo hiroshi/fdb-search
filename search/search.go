@@ -7,45 +7,82 @@ import (
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
   "github.com/apple/foundationdb/bindings/go/src/fdb/directory"
-  "github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
+  // "github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
   "github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 )
 
 const grams = 3
 // Key structures:
-//   Index for search by the rune:
-//     dir, context, "R", runes, order, id, pos
-//   Index for clear last search index for the id:
-//     dir, context, "I", id, order, rune
+//   1) Tri-gram str index:
+//     dir(dir, "context", context), str, order, id, pos
+//   2) Key to clear index
+//     dir(dir, "contextId", context, id), order, str
+//   3)
+//     dir(dir), dir(dir, "context", context)
+//     dir(dir), dir(dir, "contextId", context, id)
 
-func dbAndContextSubspac(dirName string, context string) (fdb.Transactor, subspace.Subspace) {
-	// Open the default database from the system cluster
-	db := fdb.MustOpenDefault()
-	// Directory subspace
-	dir, err := directory.CreateOrOpen(db, []string{dirName}, nil)
+func contextDirectorySubspace(db fdb.Transactor, dirName string, context string) (directory.DirectorySubspace) {
+	dir, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
+		contextDir, err := directory.CreateOrOpen(tr, []string{dirName, "context", context}, nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+		// fmt.Printf("contextDir:%#v\n", contextDir.Bytes())
+		dir, err := directory.CreateOrOpen(tr, []string{dirName}, nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+		tr.Set(dir.Sub(contextDir), []byte{})
+
+		return contextDir, nil
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	return db, dir.Sub(context)
+	return dir.(directory.DirectorySubspace)
+}
+
+func contextIdDirectorySubspace(db fdb.Transactor, dirName string, context string, id string) (directory.DirectorySubspace) {
+	dir, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
+		contextIdDir, err := directory.CreateOrOpen(db, []string{dirName, "contextId", context, id}, nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+		dir, err := directory.CreateOrOpen(tr, []string{dirName}, nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+		tr.Set(dir.Sub(contextIdDir), []byte{})
+		return contextIdDir, nil
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	return dir.(directory.DirectorySubspace)
 }
 
 func ClearIndex(dir string, context string, id string) {
-	db, contextSubspace := dbAndContextSubspac(dir, context)
+	db := fdb.MustOpenDefault()
+	contextDirSub := contextDirectorySubspace(db, dir, context)
+	contextIdDirSub := contextIdDirectorySubspace(db, dir, context, id)
 
 	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
-		baseKey := contextSubspace.Sub("I", id)
-		ri := tr.GetRange(baseKey, fdb.RangeOptions{}).Iterator()
+		ri := tr.GetRange(contextIdDirSub, fdb.RangeOptions{}).Iterator()
 		for ri.Advance() {
 			kv := ri.MustGet()
-			t, err := baseKey.Unpack(kv.Key)
+			t, err := contextIdDirSub.Unpack(kv.Key)
 			if err != nil {
 				log.Fatalf("Uppack failed: %+v", err)
 			}
 			order := t[0]
 			str := t[1]
-			tr.ClearRange(contextSubspace.Sub("R", str, order, id))
+			key := contextDirSub.Sub(str, order, id)
+			tr.ClearRange(key)
 		}
-		tr.ClearRange(baseKey)
+		_, err := contextIdDirSub.Remove(tr, []string{})
+		if err != nil {
+			log.Fatalf("Directory.Remoe(%+v, %+v) failed.", tr, []string{dir, "contextId", context, id})
+		}
 		return
 	})
 	if err != nil {
@@ -54,28 +91,25 @@ func ClearIndex(dir string, context string, id string) {
 }
 
 func CreateIndex(dir string, context string, order int64, id string, inputText string) {
-	db, contextSubspace := dbAndContextSubspac(dir, context)
-	// Clear last index for the id
 	ClearIndex(dir, context, id)
+
+	db := fdb.MustOpenDefault()
+	contextDirSub := contextDirectorySubspace(db, dir, context)
+	contextIdDirSub := contextIdDirectorySubspace(db, dir, context, id)
 	// Create index
 	runes := []rune(strings.ToLower(inputText))
-	// fmt.Printf("createIndex: id=%+v text='%+v'[%d]\n", id, inputText, len(runes))
 	_, err := db.Transact(func (tr fdb.Transaction) (ret interface{}, e error) {
-		// for i, w := 0, 0; i < len(text); i+= w {
 		for i, _ := range runes {
 			n := grams
 			if i + n >  len(runes) {
 				n = len(runes) - i
 			}
-			// fmt.Printf("runes[%d:%d]\n", i, n)
 			str := string(runes[i:i+n])
 			// Create key for search
-			// fmt.Printf("  key: str=%+v order=%d, id=%s, pos=%d\n", str, order, id, i)
-			key := contextSubspace.Sub("R", str, order, id, i)
-			// fmt.Printf("creatKey: %#v\n", fdb.Key(key.Bytes()))
+			key := contextDirSub.Sub(str, order, id, i)
 			tr.Set(key, []byte("\x01"))
 			// Create key for clear old search key
-			tr.Set(contextSubspace.Sub("I", id, order, str), []byte("\x01"))
+			tr.Set(contextIdDirSub.Sub(order, str), []byte("\x01"))
 		}
 		return
 	})
@@ -103,7 +137,8 @@ type SearchFuture struct {
 }
 
 func Search(dir string, context string, term string) SearchResult {
-	db, contextSubspace := dbAndContextSubspac(dir, context)
+	db := fdb.MustOpenDefault()
+	contextDirSub := contextDirectorySubspace(db, dir, context)
 
 	runes := []rune(strings.ToLower(term))
 	runeIndex := 0
@@ -112,7 +147,7 @@ func Search(dir string, context string, term string) SearchResult {
 	if len(runes) > grams {
 		firstRunes = runes[:grams]
 	}
-	keyBytes := append(append(contextSubspace.Sub("R").Bytes(), 0x02), []byte(string(firstRunes))...)
+	keyBytes := append(append(contextDirSub.Bytes(), 0x02), []byte(string(firstRunes))...)
 	beginKey := fdb.Key(keyBytes)
 	endBytes, err := fdb.Strinc(keyBytes)
 	if err != nil {
@@ -136,7 +171,7 @@ func Search(dir string, context string, term string) SearchResult {
 				process := func(futures []SearchFuture, future SearchFuture) []SearchFuture {
 					if runeIndex + grams < len(runes) {
 						str := string(runes[nextRuneIndex : nextRuneIndex + grams])
-						nextKey := contextSubspace.Sub("R", str, future.Order, future.Id, future.StartPos + nextRuneIndex)
+						nextKey := contextDirSub.Sub(str, future.Order, future.Id, future.StartPos + nextRuneIndex)
 						futures = append(futures, SearchFuture{future.Order, future.Id, future.StartPos, nextRuneIndex, tr.Get(nextKey)})
 					} else if lastMatchId != future.Id {
 						item := SearchResultItem{future.Id.(string), future.StartPos}
@@ -155,7 +190,7 @@ func Search(dir string, context string, term string) SearchResult {
 						}
 						kv := ri.MustGet()
 						endKey = kv.Key
-						t, err := contextSubspace.Sub("R").Unpack(kv.Key)
+						t, err := contextDirSub.Unpack(kv.Key)
 						if err != nil {
 							log.Fatalf("Unpack failed: %+v.", err)
 						}
