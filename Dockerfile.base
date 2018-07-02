@@ -10,6 +10,6 @@ ENV PATH=/usr/lib/go/bin:$PATH
 ADD https://www.foundationdb.org/downloads/5.1.7/ubuntu/installers/foundationdb-clients_5.1.7-1_amd64.deb .
 RUN dpkg -i foundationdb-clients_5.1.7-1_amd64.deb
 ENV GOPATH=/root/go
-RUN go get -vd github.com/apple/foundationdb/bindings/go/src/fdb && \
+RUN go get -v -d github.com/apple/foundationdb/bindings/go/src/fdb && \
     cd $GOPATH/src/github.com/apple/foundationdb && git checkout 5.1.7 && \
     go get -v github.com/apple/foundationdb/bindings/go/src/fdb
