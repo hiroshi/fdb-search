@@ -2,6 +2,9 @@ version: '3'
 services:
   fdb-search:
     image: fdb-go
+    build:
+      context: .
+      dockerfile: ./Dockerfile.base
     command: ['go', 'run', 'main.go']
     working_dir: /root/go/src/github.com/hiroshi/fdb-search
     ports:
